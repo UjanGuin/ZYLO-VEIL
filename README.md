@@ -1,10 +1,30 @@
 # ZYLO VEIL
+![License](https://img.shields.io/github/license/UjanGuin/ZYLO-VEIL)
+![Stars](https://img.shields.io/github/stars/UjanGuin/ZYLO-VEIL?style=social)
+![Forks](https://img.shields.io/github/forks/UjanGuin/ZYLO-VEIL?style=social)
+![Issues](https://img.shields.io/github/issues/UjanGuin/ZYLO-VEIL)
+![Last Commit](https://img.shields.io/github/last-commit/UjanGuin/ZYLO-VEIL)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![Research](https://img.shields.io/badge/research%20prototype-yes-orange)
+![Docs](https://img.shields.io/badge/docs-experimental-blueviolet)
+![Stego](https://img.shields.io/badge/steganography-advanced-blue)
+![AES-GCM](https://img.shields.io/badge/encryption-AES--GCM-green)
+![Argon2](https://img.shields.io/badge/KDF-Argon2id-brightgreen)
 
 > **Experimental Cryptographic Steganography with Distributed, Adaptive, and Destructive Properties**
 
 ZYLO VEIL is a research‑grade cryptographic steganography system designed to explore what happens when modern cryptography, adaptive signal analysis, and adversarial threat models are combined at the stego layer itself. Rather than treating steganography as simple data hiding, ZYLO VEIL treats the carrier image as a cryptographic substrate: payloads are encrypted, optionally split across multiple carriers using threshold secret sharing, adaptively embedded based on local noise characteristics, and protected with anti‑forensic countermeasures. The system further introduces carrier binding, temporal fragility, self‑destruct behavior, and stego mutation, making extraction dependent not only on the correct key but also on time, carrier integrity, and extraction history.
 
 This repository intentionally contains a single, large Python file (≈2500 lines) that implements the entire system end‑to‑end. There are no external services, no databases, and no Git submodules—everything required to study, audit, and experiment with the design is self‑contained and transparent in one place.
+
+
+<p align="center">
+  <img src="assets/ui1.png" width="800" alt="ZYLO VEIL UI Preview 1">
+</p>
+
+<p align="center">
+  <img src="assets/ui2.png" width="800" alt="ZYLO VEIL UI Preview 1">
+</p>
 
 ---
 
