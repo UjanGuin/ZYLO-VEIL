@@ -26,6 +26,10 @@ This repository intentionally contains a single, large Python file (≈2500 line
   <img src="assets/ui2.png" width="800" alt="ZYLO VEIL UI Preview 1">
 </p>
 
+<p align="center">
+  <img src="assets/ui3.png" width="800" alt="ZYLO VEIL UI Preview 1">
+</p>
+
 ---
 
 ## ⚠️ Important Notice
