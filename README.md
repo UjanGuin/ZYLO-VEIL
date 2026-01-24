@@ -240,6 +240,44 @@ README.md
 ZYLOVEIL.py        # Entire system (≈2500 lines)
 ZYLO~ZENTRA.png   # Example carrier image
 ```
+---
+
+## 🌐 Access From Internet (ngrok)
+
+To expose ZYLO LINK beyond your local network:
+
+1. Login: [https://dashboard.ngrok.com/login](https://dashboard.ngrok.com/login)
+
+2. Copy Authtoken: [https://dashboard.ngrok.com/get-started/your-authtoken](https://dashboard.ngrok.com/get-started/your-authtoken)
+
+3. Install ngrok:
+
+```bash
+wget https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz
+tar -xvzf ngrok-v3-stable-linux-amd64.tgz
+sudo mv ngrok /usr/local/bin
+```
+
+4. Add your authtoken:
+
+```bash
+ngrok config add-authtoken YOUR_AUTHTOKEN
+```
+
+5. Start tunneling:
+
+```bash
+ngrok http 5000
+```
+
+```python
+if __name__ == "__main__":
+    print("\n💎 ZYLO LINK Ultimate Running Successfully")
+    print("👉 http://127.0.0.1:5000")
+    socketio.run(app, host="0.0.0.0", port=5000, debug=False)
+```
+
+> **Note:** ngrok URLs are temporary unless you use a paid plan.
 
 ---
 
