@@ -30,6 +30,20 @@ This repository intentionally contains a single, large Python file (≈2500 line
   <img src="assets/ui3.png" width="800" alt="ZYLO VEIL UI Preview 1">
 </p>
 
+### Android app
+
+The Android app brings the ZYLO VEIL workflow to mobile, including the Veil encryption screen, Unveil reconstruction screen, startup experience, and in-app capability overview.
+
+<p align="center">
+  <img src="assets/android-splash.png" width="280" alt="ZYLO VEIL Android splash screen">
+  <img src="assets/android-veil.png" width="280" alt="ZYLO VEIL Android Veil encryption screen">
+</p>
+
+<p align="center">
+  <img src="assets/android-unveil.png" width="280" alt="ZYLO VEIL Android Unveil reconstruction screen">
+  <img src="assets/android-capabilities.png" width="280" alt="ZYLO VEIL Android core capabilities and threat model">
+</p>
+
 ---
 
 ## ⚠️ Important Notice
