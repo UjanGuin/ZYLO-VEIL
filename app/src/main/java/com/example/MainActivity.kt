@@ -132,7 +132,7 @@ fun ZyloVeilApp(
                             border = BorderStroke(1.dp, LimeSprout.copy(alpha = 0.35f))
                         ) {
                             Text(
-                                text = "v3.0",
+                                text = "v3.2",
                                 modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = LimeSprout,

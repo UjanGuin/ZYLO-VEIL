@@ -8,6 +8,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
@@ -30,6 +31,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.window.Dialog
 import com.example.model.CarrierImage
 import com.example.model.StegoProgress
@@ -103,11 +105,31 @@ fun GlassBottomNavigation(
     onItemSelected: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val selectedIndex = items.indexOfFirst { it.third }.coerceAtLeast(0)
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
             .height(76.dp)
             .padding(horizontal = 12.dp, vertical = 8.dp)
+            .pointerInput(items) {
+                var dragDistance = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = { dragDistance = 0f },
+                    onHorizontalDrag = { change, amount ->
+                        dragDistance += amount
+                    },
+                    onDragEnd = {
+                        if (kotlin.math.abs(dragDistance) > 48f) {
+                            val nextIndex = if (dragDistance < 0f) {
+                                (selectedIndex + 1).coerceAtMost(items.lastIndex)
+                            } else {
+                                (selectedIndex - 1).coerceAtLeast(0)
+                            }
+                            if (nextIndex != selectedIndex) onItemSelected(nextIndex)
+                        }
+                    }
+                )
+            }
             .clip(RoundedCornerShape(28.dp))
             .border(
                 BorderStroke(1.dp, Color.White.copy(alpha = 0.26f)),
@@ -123,7 +145,6 @@ fun GlassBottomNavigation(
                 )
             )
     ) {
-        val selectedIndex = items.indexOfFirst { it.third }.coerceAtLeast(0)
         val itemWidth = maxWidth / items.size
         val indicatorX by animateDpAsState(
             targetValue = itemWidth * selectedIndex + 6.dp,
@@ -159,6 +180,7 @@ fun GlassBottomNavigation(
                     modifier = Modifier
                         .width(itemWidth)
                         .fillMaxHeight()
+                        .testTag("nav_item_${item.first.lowercase()}")
                         .clickable { onItemSelected(index) },
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center

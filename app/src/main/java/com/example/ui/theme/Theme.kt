@@ -39,7 +39,10 @@ fun ZyloVeilTheme(
             val window = (view.context as? Activity)?.window
             if (window != null) {
                 window.statusBarColor = ObsidianBlack.toArgb()
-                window.navigationBarColor = ObsidianBlack.toArgb()
+                window.navigationBarColor = android.graphics.Color.TRANSPARENT
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                    window.isNavigationBarContrastEnforced = false
+                }
                 val controller = WindowCompat.getInsetsController(window, view)
                 controller.isAppearanceLightStatusBars = false
                 controller.isAppearanceLightNavigationBars = false
