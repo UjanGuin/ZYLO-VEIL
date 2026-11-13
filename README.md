@@ -1,335 +1,84 @@
-# ZYLO VEIL
-![License](https://img.shields.io/github/license/UjanGuin/ZYLO-VEIL)
-![Stars](https://img.shields.io/github/stars/UjanGuin/ZYLO-VEIL?style=social)
-![Forks](https://img.shields.io/github/forks/UjanGuin/ZYLO-VEIL?style=social)
-![Issues](https://img.shields.io/github/issues/UjanGuin/ZYLO-VEIL)
-![Last Commit](https://img.shields.io/github/last-commit/UjanGuin/ZYLO-VEIL)
-![Python](https://img.shields.io/badge/python-3.10%2B-blue)
-![Research](https://img.shields.io/badge/research%20prototype-yes-orange)
-![Docs](https://img.shields.io/badge/docs-experimental-blueviolet)
-![Stego](https://img.shields.io/badge/steganography-advanced-blue)
-![AES-GCM](https://img.shields.io/badge/encryption-AES--GCM-green)
-![Argon2](https://img.shields.io/badge/KDF-Argon2id-brightgreen)
+# ZYLO VEIL (Android)
 
-> **Experimental Cryptographic Steganography with Distributed, Adaptive, and Destructive Properties**
+> **Advanced Cryptographic Steganography with Multi-Carrier Shamir Secret Sharing, Anti-Forensics, and Auto JPG-to-PNG Carrier Conversion**
 
-ZYLO VEIL is a research‑grade cryptographic steganography system designed to explore what happens when modern cryptography, adaptive signal analysis, and adversarial threat models are combined at the stego layer itself. Rather than treating steganography as simple data hiding, ZYLO VEIL treats the carrier image as a cryptographic substrate: payloads are encrypted, optionally split across multiple carriers using threshold secret sharing, adaptively embedded based on local noise characteristics, and protected with anti‑forensic countermeasures. The system further introduces carrier binding, temporal fragility, self‑destruct behavior, and stego mutation, making extraction dependent not only on the correct key but also on time, carrier integrity, and extraction history.
-
-This repository intentionally contains a single, large Python file (≈2500 lines) that implements the entire system end‑to‑end. There are no external services, no databases, and no Git submodules—everything required to study, audit, and experiment with the design is self‑contained and transparent in one place.
-
-
-<p align="center">
-  <img src="assets/ui1.png" width="800" alt="ZYLO VEIL UI Preview 1">
-</p>
-
-<p align="center">
-  <img src="assets/ui2.png" width="800" alt="ZYLO VEIL UI Preview 1">
-</p>
-
-<p align="center">
-  <img src="assets/ui3.png" width="800" alt="ZYLO VEIL UI Preview 1">
-</p>
-
-### Android app
-
-The Android app brings the ZYLO VEIL workflow to mobile, including the Veil encryption screen, Unveil reconstruction screen, startup experience, and in-app capability overview.
-
-<p align="center">
-  <img src="assets/android-splash.png" width="280" alt="ZYLO VEIL Android splash screen">
-  <img src="assets/android-veil.png" width="280" alt="ZYLO VEIL Android Veil encryption screen">
-</p>
-
-<p align="center">
-  <img src="assets/android-unveil.png" width="280" alt="ZYLO VEIL Android Unveil reconstruction screen">
-  <img src="assets/android-capabilities.png" width="280" alt="ZYLO VEIL Android core capabilities and threat model">
-</p>
+ZYLO VEIL for Android is a native Kotlin & Jetpack Compose implementation of the research-grade cryptographic steganography system originally created by Swapnanil Guin. It treats carrier images as a distributed, adaptive cryptographic substrate: payloads are compressed, AES-256-GCM encrypted, and split using Shamir's Secret Sharing (K-of-N) across multiple carrier images.
 
 ---
 
-## ⚠️ Important Notice
+## Key Features
 
-This project is **experimental** and intended for **education, research, and defensive study** of steganography and steganalysis.
+### 1. Auto JPG to PNG Lossless Conversion (NEW)
+When uploading or selecting carrier images (JPG, JPEG, WEBP), ZYLO VEIL automatically decodes them into uncompressed ARGB_8888 bitmaps and converts them to lossless PNGs. This guarantees that lossy compression artifacts never corrupt or destroy sensitive LSB bit-planes.
 
-It is **not** marketed as “unbreakable.” Instead, it explicitly documents its threat model and design trade‑offs.
-
----
-
-## Core Capabilities (What Makes ZYLO VEIL Different)
-
-### 1️⃣ Multi‑Carrier Split Payload (Optional, Shamir‑Style)
-
-* Payload is **encrypted first**, then split using **Shamir’s Secret Sharing (K‑of‑N)**.
+### 2. Multi-Carrier Split Payload (True Shamir K-of-N)
+* Payload is encrypted first, then split using **Shamir's Secret Sharing (GF(256))**.
 * Each carrier image embeds **only one share**.
-* A single image is cryptographically useless unless K shares are collected.
-* **Optional**: set K=1 to use a single carrier image (classic mode).
+* A single image is mathematically and cryptographically useless without collecting at least **K** valid carrier shares.
+* Supports **K = 1** for classic single-image steganography.
 
-This makes ZYLO VEIL a **distributed steganographic vault**, not just a file hider.
+### 3. Adaptive Noise & Semantic-Aware Embedding
+* Computes embedding capacity dynamically per pixel based on luminance cross-difference edge detection, texture variance, and perceptual masking heuristics.
+* Smooth regions receive fewer bits; textured regions receive more.
 
----
+### 4. Anti-Forensic Stego Poisoning
+* Injects camera-sensor-like Gaussian noise into unused color channels to disrupt statistical steganalysis tools (chi-squared and sample pair analysis).
 
-### 2️⃣ Adaptive Noise & Semantic‑Aware Embedding
+### 5. Stateless Zero-Header Mode
+* Strips all magic bytes and explicit headers.
+* Extraction is driven by deterministic, keyed implicit markers derived from the passphrase, carrier fingerprint, and algorithm version.
 
-* Embedding capacity is computed per pixel using:
+### 6. Bit-Plane Migration & Temporal Fragility
+* Embedding bit-planes migrate deterministically across 6-hour time epochs.
+* Delayed exfiltration copies decay and fail to decrypt.
 
-  * edge/noise estimation
-  * pseudo‑random bias
-  * optional semantic camouflage heuristics
-* Smooth regions get fewer bits; noisy regions get more.
+### 7. Real Self-Destruct
+* Configurable maximum decryption attempt counter.
+* Exceeding the threshold triggers permanent, irreversible poisoning of the carrier image's embedded bits.
 
-This breaks many statistical steganalysis assumptions.
-
----
-
-### 3️⃣ Anti‑Forensic Stego Poisoning
-
-After embedding, unused pixel channels are deliberately perturbed to:
-
-* mimic camera sensor noise
-* destroy clean statistical signatures
-* introduce decoy entropy
-
-This is **anti‑forensics**, not just hiding.
-
----
-
-### 4️⃣ Stateless Extraction Mode (Zero‑Header)
-
-Optional mode where:
-
-* **No magic bytes**
-* **No explicit header**
-* All parameters are derived from:
-
-  * passphrase
-  * carrier fingerprint
-  * algorithm version
-
-Without the exact carrier + passphrase + algorithm, extraction is impossible.
+### 8. Stego Analyzer & Visual Bit-Plane Inspector
+* Interactive inspector that calculates Red, Green, and Blue LSB Shannon entropy.
+* Visualizes the raw LSB bit-plane as a high-contrast binary map to detect artificial noise and anomalies.
+* Verify-only mode checks carrier decoding, authenticated metadata, format/KDF compatibility,
+  capacity, and Shamir share-set membership without extracting secret plaintext or mutating carriers.
+* Benchmark & Steganalysis Reports provide per-carrier and aggregate capacity, repeated verification
+  reliability, LSB entropy, and detectability indicators. Changed-channel ratio and pixel error are
+  explicitly reported as unavailable unless an original carrier is supplied; indicators do not claim
+  immunity from specialized steganalysis.
 
 ---
 
-### 5️⃣ Bit‑Plane Migration (Temporal Fragility)
+## Technical Architecture
 
-* Embedding bit‑planes migrate deterministically over time.
-* Old copies of the same stego image become undecodable.
-* Screenshots or delayed exfiltration fail.
+* **Runtime:** Android 14+ (API 34/36)
+* **UI Toolkit:** Jetpack Compose + Material Design 3 (Glassmorphism dark theme)
+* **Cryptography:** AES-256-GCM (javax.crypto), PBKDF2WithHmacSHA512 KDF, SHA-256 / SHA-512
+* **Secret Sharing:** Pure Galois Field GF(256) Shamir Polynomial Thresholding
+* **Compression:** Deflate / XZ high-compression stream format
 
-This introduces **time‑bound decay** into steganography.
+### Format compatibility
 
----
-
-### 6️⃣ Self‑Destruct & Attempt Limiting
-
-* Optional extraction attempt counter.
-* After N failed attempts:
-
-  * embedded bits are **irreversibly poisoned**
-  * carrier is permanently destroyed
+New standard and stateless carriers use format version 4. Standard shares authenticate
+their serialized header as AES-GCM associated data, and the header records the KDF
+identifier and iteration count. Existing version 3 standard carriers remain readable
+using the legacy unauthenticated-header path; newly generated carriers should be used
+when header tamper detection is required.
 
 ---
 
-### 7️⃣ Stego Mutation on Extraction
-
-* On successful extraction, payload can be **re‑embedded differently**.
-* Seeds, salts, and permutations rotate.
-* Old copies become invalid.
-
-The image becomes a **living container**.
-
----
-
-### 8️⃣ Formal Threat Model (By Design)
-
-ZYLO VEIL explicitly considers:
-
-**Defends Against**
-
-* casual inspection
-* LSB plane visualization
-* naive steganalysis
-* partial carrier compromise
-* replay of old stego copies
-
-**Does NOT Defend Against**
-
-* full plaintext knowledge of both carrier and payload
-* active image recompression
-* hostile ML models trained specifically on this algorithm
-
----
-
-## Architecture Overview
-
-```
-[ Secret File ]
-      ↓
-[ LZMA Compression ]
-      ↓
-[ AES‑GCM Encryption ]
-      ↓
-[ Shamir Split (Optional) ]
-      ↓
-[ Adaptive Stego Embed ] → PNG Carriers
-```
-
-Extraction reverses the process **only if constraints are satisfied**.
-
----
-
-## Running the Project
-
-### Requirements
-
-* Python 3.10+
-* Pillow
-* cryptography **or** pycryptodome
-* argon2‑cffi (optional but recommended)
-
-Install:
-
-```bash
-pip install pillow cryptography argon2-cffi
-```
-
----
-
-## Launch (Web UI)
-
-The single Python file exposes a Flask‑based UI.
-
-```bash
-python ZYLOVEIL.py
-```
-
-Then open:
-
-```
-http://127.0.0.1:5000
-```
-
----
-
-## Example: Single‑Image Mode (K = 1)
-
-1. Select a secret file
-2. Select **one** carrier image
-3. Set **K = 1**
-4. Provide passphrase
-5. Embed
-
-Result: one PNG containing the encrypted payload.
-
----
-
-## Example: Multi‑Carrier Mode (K‑of‑N)
-
-* Carriers: 5 images
-* Threshold: K = 3
-
-Any 3 of the 5 images are required to recover the payload.
-
----
-
-## Carrier Image Example
-
-The repository includes a sample carrier image:
-
-```
-ZYLO~ZENTRA.png
-```
-
-This image is visually clean and suitable for testing adaptive embedding.
-
-## File Size
-
-The maxium size of the file that can be embeded depends on the size of the carrier image/s.
-To get higher space, one may increase the carrier image's size from [here](https://image.pi7.org/increase-image-size-in-kb).
-
----
-
-## File Layout
-
-```
-README.md
-ZYLOVEIL.py        # Entire system (≈2500 lines)
-ZYLO~ZENTRA.png   # Example carrier image
-```
----
-
-## 🌐 Access From Internet (ngrok)
-
-To expose ZYLO LINK beyond your local network:
-
-1. Login: [https://dashboard.ngrok.com/login](https://dashboard.ngrok.com/login)
-
-2. Copy Authtoken: [https://dashboard.ngrok.com/get-started/your-authtoken](https://dashboard.ngrok.com/get-started/your-authtoken)
-
-3. Install ngrok:
-
-```bash
-wget https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz
-tar -xvzf ngrok-v3-stable-linux-amd64.tgz
-sudo mv ngrok /usr/local/bin
-```
-
-4. Add your authtoken:
-
-```bash
-ngrok config add-authtoken YOUR_AUTHTOKEN
-```
-
-5. Start tunneling:
-
-```bash
-ngrok http 5000
-```
-
-```python
-if __name__ == "__main__":
-    print("\n💎 ZYLO LINK Ultimate Running Successfully")
-    print("👉 http://127.0.0.1:5000")
-    socketio.run(app, host="0.0.0.0", port=5000, debug=False)
-```
-
-> **Note:** ngrok URLs are temporary unless you use a paid plan.
-
----
-
-## Why This Repo Matters
-
-Most steganography tools:
-
-* hide bytes
-* use fixed LSBs
-* assume static extraction
-
-ZYLO VEIL explores **cryptographic steganography**:
-
-* carrier‑bound
-* time‑fragile
-* distributed
-* self‑destructive
-* mutation‑capable
-
-This places it closer to **research prototypes** than consumer tools.
-
----
-
-## Final Disclaimer
-
-Do not use this project for illegal activity.
-
-Use it to:
-
-* learn
-* experiment
-* understand steganography limits
-* build better detection tools
-
----
-
-**Author:** Swapnanil Guin
-
-**Project Codename:** ZYLO VEIL
-
-**Status:** Experimental / Research‑grade
+## Usage
+
+1. **Embed (Veil):**
+   * Enter secret text or select any file.
+   * Add carrier images (JPG or PNG — JPGs are automatically converted to lossless PNG).
+   * Enter a passphrase (min 8 characters).
+   * Configure threshold **K** and adversarial flags.
+   * Tap **Embed & Protect (Veil)** to generate stego PNG files.
+
+2. **Extract (Unveil):**
+   * Select the stego carrier PNG images.
+   * Enter the passphrase.
+   * Tap **Extract Secret (Unveil)** to reconstruct and view/export the secret.
+
+3. **Inspect:**
+   * Pick any image to calculate entropy and visualize the LSB plane.

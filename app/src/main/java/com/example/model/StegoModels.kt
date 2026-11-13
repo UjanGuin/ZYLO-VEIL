@@ -112,5 +112,54 @@ data class AnalysisReport(
     val isStatelessLikely: Boolean,
     val redLsbEntropy: Float,
     val greenLsbEntropy: Float,
-    val blueLsbEntropy: Float
+    val blueLsbEntropy: Float,
+    val estimatedVisualDistortionPercent: Float = 0f,
+    val estimatedDetectabilityScore: Float = 0f,
+    val extractionReliability: String = "Not measured"
+)
+
+enum class VerificationStatus { PASS, WARNING, FAIL }
+
+data class VerificationCheck(
+    val name: String,
+    val status: VerificationStatus,
+    val detail: String
+)
+
+data class CarrierVerificationReport(
+    val fileName: String,
+    val checks: List<VerificationCheck>,
+    val header: ZyloHeader? = null
+) {
+    val passed: Boolean get() = checks.none { it.status == VerificationStatus.FAIL }
+}
+
+data class CarrierSetVerificationReport(
+    val carriers: List<CarrierVerificationReport>,
+    val checks: List<VerificationCheck>
+) {
+    val passed: Boolean get() = checks.none { it.status == VerificationStatus.FAIL } &&
+            carriers.all { it.passed }
+}
+
+data class CarrierBenchmark(
+    val fileName: String,
+    val availableCapacityBytes: Long,
+    val usedCapacityBytes: Long?,
+    val changedChannelRatio: Float?,
+    val meanAbsolutePixelError: Float?,
+    val verificationSuccesses: Int,
+    val verificationTrials: Int,
+    val lsbEntropy: Float,
+    val detectabilityIndicator: Float
+)
+
+data class BenchmarkReport(
+    val carriers: List<CarrierBenchmark>,
+    val aggregateAvailableCapacityBytes: Long,
+    val aggregateUsedCapacityBytes: Long?,
+    val aggregateChangedChannelRatio: Float?,
+    val aggregateMeanAbsolutePixelError: Float?,
+    val aggregateVerificationReliability: Float?,
+    val disclaimer: String = "Indicators are measured or estimated from available inputs; they do not claim immunity from specialized steganalysis."
 )

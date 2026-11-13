@@ -30,6 +30,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.crypto.StegoEngine
 import com.example.model.AnalysisReport
+import com.example.model.CarrierSetVerificationReport
+import com.example.model.BenchmarkReport
+import com.example.model.VerificationStatus
 import com.example.ui.components.*
 import com.example.ui.theme.*
 import com.example.util.HapticHelper
@@ -50,6 +53,10 @@ fun InspectScreen() {
     var report by remember { mutableStateOf<AnalysisReport?>(null) }
     var lsbPlaneBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var isAnalyzing by remember { mutableStateOf(false) }
+    var verifyPassphrase by remember { mutableStateOf("") }
+    var verificationReport by remember { mutableStateOf<CarrierSetVerificationReport?>(null) }
+    var benchmarkReport by remember { mutableStateOf<BenchmarkReport?>(null) }
+    var isVerifying by remember { mutableStateOf(false) }
 
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -64,6 +71,7 @@ fun InspectScreen() {
                     cr.openInputStream(it)?.use { input ->
                         FileOutputStream(tempFile).use { output -> input.copyTo(output) }
                     }
+
                     analyzedFile = tempFile
 
                     val rep = StegoEngine.analyzeImage(tempFile)
@@ -111,6 +119,32 @@ fun InspectScreen() {
                     Toast.makeText(context, "Analysis failed: $msg", Toast.LENGTH_SHORT).show()
                 } finally {
                     isAnalyzing = false
+                }
+            }
+        }
+    }
+
+    val verifyPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            coroutineScope.launch {
+                isVerifying = true
+                try {
+                    val files = uris.mapIndexed { index, uri ->
+                        val file = File(context.cacheDir, "verify_${System.currentTimeMillis()}_$index.png")
+                        context.contentResolver.openInputStream(uri)?.use { input ->
+                            FileOutputStream(file).use { output -> input.copyTo(output) }
+                        } ?: throw IllegalArgumentException("Cannot read selected carrier")
+                        file
+                    }
+                    verificationReport = StegoEngine.verifyCarrierSet(files, verifyPassphrase)
+                    benchmarkReport = StegoEngine.benchmarkCarriers(files, verifyPassphrase)
+                } catch (e: Throwable) {
+                    if (e is CancellationException) return@launch
+                    Toast.makeText(context, "Verification failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                } finally {
+                    isVerifying = false
                 }
             }
         }
@@ -191,6 +225,41 @@ fun InspectScreen() {
                     iconTint = LimeSprout,
                     testTag = "inspect_select_image_button"
                 )
+
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "Verify-only mode authenticates headers and encrypted share metadata, checks format/capacity, and validates set membership without extracting the secret or mutating carriers.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = SandSecondary
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = verifyPassphrase,
+                    onValueChange = { verifyPassphrase = it },
+                    modifier = Modifier.fillMaxWidth().testTag("verify_passphrase_input"),
+                    label = { Text("Passphrase for verification", color = SandSecondary) },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = LimeSprout,
+                        unfocusedBorderColor = GlassBorder,
+                        focusedTextColor = Sand,
+                        unfocusedTextColor = Sand
+                    )
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                AppleGlassButton(
+                    text = if (isVerifying) "Verifying..." else "Verify Carrier Set",
+                    onClick = {
+                        if (verifyPassphrase.isBlank()) {
+                            Toast.makeText(context, "Enter the passphrase to verify authenticated metadata", Toast.LENGTH_SHORT).show()
+                        } else {
+                            verifyPicker.launch("image/*")
+                        }
+                    },
+                    icon = Icons.Default.VerifiedUser,
+                    iconTint = LimeSprout,
+                    testTag = "verify_carrier_set_button"
+                )
             }
         }
 
@@ -252,6 +321,18 @@ fun InspectScreen() {
                     EntropyBar(label = "Green Channel LSB", value = rep.greenLsbEntropy, color = CyprusLight)
                     EntropyBar(label = "Blue Channel LSB", value = rep.blueLsbEntropy, color = FreshCanopyLight)
 
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Benchmark & steganalysis indicators",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Sand,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text("Capacity: ${rep.estimatedCapacityBytes / 1024} KB (estimated from pixels)", color = SandSecondary)
+                    Text("Visual distortion: %.2f%% (estimated; original carrier not available)".format(rep.estimatedVisualDistortionPercent), color = SandSecondary)
+                    Text("Statistical detectability indicator: %.3f (heuristic, not a resistance guarantee)".format(rep.estimatedDetectabilityScore), color = SandSecondary)
+                    Text("Extraction reliability: ${rep.extractionReliability}", color = SandSecondary)
+
                     if (rep.isStatelessLikely) {
                         Spacer(modifier = Modifier.height(12.dp))
                         Surface(
@@ -272,6 +353,98 @@ fun InspectScreen() {
                                 )
                             }
                         }
+
+                    }
+                }
+            }
+
+            verificationReport?.let { verification ->
+                item {
+                    GlassCard {
+                        SectionHeader(
+                            title = "Verify-only result",
+                            subtitle = if (verification.passed) "No secret plaintext extracted and no carrier mutation performed" else "One or more checks failed",
+                            icon = if (verification.passed) Icons.Default.Verified else Icons.Default.Warning,
+                            iconTint = if (verification.passed) LimeSprout else Color(0xFFFFB74D)
+                        )
+                        verification.checks.forEach { check ->
+                            val color = when (check.status) {
+                                VerificationStatus.PASS -> LimeSprout
+                                VerificationStatus.WARNING -> Color(0xFFFFB74D)
+                                VerificationStatus.FAIL -> Color(0xFFFF6B6B)
+                            }
+                            Text("${check.status}: ${check.name}", color = color, fontWeight = FontWeight.Bold)
+                            Text(check.detail, color = SandSecondary, style = MaterialTheme.typography.bodySmall)
+                            Spacer(modifier = Modifier.height(6.dp))
+                        }
+                        verification.carriers.forEach { carrier ->
+                            Text(carrier.fileName, color = Sand, fontWeight = FontWeight.SemiBold)
+                            carrier.checks.forEach { check ->
+                                Text("  ${check.status}: ${check.name} — ${check.detail}", color = SandSecondary, style = MaterialTheme.typography.bodySmall)
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                        }
+                    }
+                }
+            }
+
+            benchmarkReport?.let { benchmark ->
+                item {
+                    GlassCard {
+                        SectionHeader(
+                            title = "Benchmark & Steganalysis Report",
+                            subtitle = "Per-carrier measurements and estimates",
+                            icon = Icons.Default.Assessment,
+                            iconTint = LimeSprout
+                        )
+                        Text(
+                            text = "Aggregate available capacity: ${benchmark.aggregateAvailableCapacityBytes / 1024} KB",
+                            color = Sand
+                        )
+                        Text(
+                            text = "Aggregate used capacity: ${benchmark.aggregateUsedCapacityBytes?.let { "${it / 1024} KB (measured after verification)" } ?: "Not measured"}",
+                            color = SandSecondary
+                        )
+                        Text(
+                            text = "Repeated verification reliability: ${benchmark.aggregateVerificationReliability?.let { "%.1f%% measured".format(it * 100f) } ?: "Not measured"}",
+                            color = SandSecondary
+                        )
+                        Text(
+                            text = "Changed-channel ratio: ${benchmark.aggregateChangedChannelRatio?.let { "%.3f measured".format(it) } ?: "Not measured (original carrier required)"}",
+                            color = SandSecondary
+                        )
+                        Text(
+                            text = "Mean pixel error: ${benchmark.aggregateMeanAbsolutePixelError?.let { "%.3f measured".format(it) } ?: "Not measured (original carrier required)"}",
+                            color = SandSecondary
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        benchmark.carriers.forEach { carrier ->
+                            Text(carrier.fileName, color = Sand, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "Capacity: ${carrier.availableCapacityBytes / 1024} KB available; ${carrier.usedCapacityBytes?.let { "${it / 1024} KB used" } ?: "used not measured"}",
+                                color = SandSecondary,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Text(
+                                "Verification: ${carrier.verificationSuccesses}/${carrier.verificationTrials} trials; LSB entropy %.3f; detectability indicator %.3f".format(
+                                    carrier.lsbEntropy,
+                                    carrier.detectabilityIndicator
+                                ),
+                                color = SandSecondary,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Text(
+                                "Changed-channel ratio: not measured; pixel error: not measured (original carrier unavailable)",
+                                color = SandSecondary,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+                        Text(
+                            text = benchmark.disclaimer,
+                            color = Color(0xFFFFB74D),
+                            style = MaterialTheme.typography.bodySmall
+                        )
                     }
                 }
             }

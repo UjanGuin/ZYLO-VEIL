@@ -158,4 +158,12 @@ class StegoEngineTest {
             migrationEpoch = 0
         )
     }
+
+    @Test
+    fun testVerifyCarrierSetReportsMissingAuthenticatedCarriers() {
+        val report = StegoEngine.verifyCarrierSet(emptyList(), "passphrase")
+
+        assertTrue(!report.passed)
+        assertTrue(report.checks.any { it.name == "Share-set membership" })
+    }
 }

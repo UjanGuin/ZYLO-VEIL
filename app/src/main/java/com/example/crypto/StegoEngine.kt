@@ -6,12 +6,18 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
 import com.example.model.AnalysisReport
+import com.example.model.CarrierSetVerificationReport
+import com.example.model.CarrierVerificationReport
+import com.example.model.BenchmarkReport
+import com.example.model.CarrierBenchmark
 import com.example.model.CarrierImage
 import com.example.model.EmbedOptions
 import com.example.model.EmbedResult
 import com.example.model.ExtractResult
 import com.example.model.StegoProgress
 import com.example.model.ZyloHeader
+import com.example.model.VerificationCheck
+import com.example.model.VerificationStatus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -668,7 +674,8 @@ object StegoEngine {
     fun extractShare(
         stegoFile: File,
         passphrase: String,
-        allowMutation: Boolean = false
+        allowMutation: Boolean = false,
+        verifyOnly: Boolean = false
     ): Pair<ZyloHeader, ByteArray> {
         val bitmap = BitmapFactory.decodeFile(stegoFile.absolutePath, BitmapFactory.Options().apply {
             inPreferredConfig = Bitmap.Config.ARGB_8888
@@ -867,7 +874,7 @@ object StegoEngine {
                 }
             } catch (e: Exception) {
                 val nextAttempt = (header.attUsed + 1).coerceAtMost(255)
-                if (header.isSelfDestruct && header.maxAtt > 0 && nextAttempt >= header.maxAtt) {
+                if (!verifyOnly && header.isSelfDestruct && header.maxAtt > 0 && nextAttempt >= header.maxAtt) {
                     // Poison carrier image on device
                     val destroySeed = ZyloCrypto.sha256(header.salt + header.iv + "DESTROY".toByteArray(Charsets.US_ASCII))
                     val poisoned = ZyloCrypto.applyAntiForensicPoisoning(argb, payloadBitsMap, destroySeed, BooleanArray(totalSlots) { true })
@@ -878,13 +885,14 @@ object StegoEngine {
                     pBmp.recycle()
                     throw IllegalStateException("SELF-DESTRUCT TRIGGERED: Decryption failed. Carrier image has been irreversibly poisoned!")
                 }
-                if (header.version >= ZyloCrypto.VERSION && header.isSelfDestruct && header.maxAtt > 0) {
+                if (!verifyOnly && header.version >= ZyloCrypto.VERSION && header.isSelfDestruct && header.maxAtt > 0) {
                     val updatedHeader = header.copy(attUsed = nextAttempt)
                     val updatedBits = ZyloCrypto.bytesToBits(headerBytesForStorage(updatedHeader))
                     for (hIdx in headerSlots.indices) {
                         val bitVal = if (updatedBits[hIdx]) 1 else 0
                         setChannelValue(argb, headerSlots[hIdx], 0xFE, bitVal)
                     }
+
                     val updatedBitmap = saveArgbPixelsToBitmap(argb, width, height)
                     FileOutputStream(stegoFile).use { fos ->
                         updatedBitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)
@@ -897,6 +905,118 @@ object StegoEngine {
             bitmap.recycle()
             return Pair(header, shareData)
         }
+    }
+
+    /**
+     * Validates carrier metadata and AEAD authentication without exposing the share
+     * or mutating attempt counters. The authenticated share is discarded.
+     */
+    fun verifyCarrier(stegoFile: File, passphrase: String): CarrierVerificationReport {
+        return try {
+            val (header, shareData) = extractShare(stegoFile, passphrase, verifyOnly = true)
+            val bitmap = BitmapFactory.decodeFile(stegoFile.absolutePath)
+                ?: throw IllegalArgumentException("Cannot decode carrier")
+            val capacityBytes = (bitmap.width.toLong() * bitmap.height * 3L * header.bpc) / 8L
+            bitmap.recycle()
+            val requiredBytes = ZyloCrypto.HEADER_FIXED_LEN.toLong() + header.shareDataLen
+            val capacityCheck = if (capacityBytes >= requiredBytes) {
+                VerificationCheck("Capacity", VerificationStatus.PASS, "$capacityBytes bytes available; $requiredBytes required")
+            } else {
+                VerificationCheck("Capacity", VerificationStatus.FAIL, "$capacityBytes bytes available; $requiredBytes required")
+            }
+            CarrierVerificationReport(
+                fileName = stegoFile.name,
+                header = header,
+                checks = listOf(
+                    VerificationCheck("Carrier integrity", VerificationStatus.PASS, "Image decoded and payload length is valid"),
+                    VerificationCheck("Header authentication", VerificationStatus.PASS, "AEAD metadata authentication succeeded"),
+                    VerificationCheck("Format compatibility", VerificationStatus.PASS, "ZYLO format v${header.version}, KDF ${header.kdfId}/${header.kdfIterations}"),
+                    capacityCheck
+                )
+            ).also { shareData.fill(0) }
+        } catch (e: Exception) {
+            CarrierVerificationReport(
+                fileName = stegoFile.name,
+                checks = listOf(
+                    VerificationCheck("Verification", VerificationStatus.FAIL, e.message ?: "Carrier verification failed")
+                )
+            )
+        }
+    }
+
+    fun verifyCarrierSet(stegoFiles: List<File>, passphrase: String): CarrierSetVerificationReport {
+        val reports = stegoFiles.map { verifyCarrier(it, passphrase) }
+        val valid = reports.filter { it.passed && it.header != null }
+        val first = valid.firstOrNull()?.header
+        val checks = mutableListOf<VerificationCheck>()
+        if (valid.isEmpty()) {
+            checks += VerificationCheck("Share-set membership", VerificationStatus.FAIL, "No authenticated carriers found")
+        } else {
+            val sameSet = valid.all {
+                it.header!!.shareId == first!!.shareId &&
+                        it.header.nTotal == first.nTotal &&
+                        it.header.kNeeded == first.kNeeded
+            }
+            checks += VerificationCheck(
+                "Share-set membership",
+                if (sameSet) VerificationStatus.PASS else VerificationStatus.FAIL,
+                if (sameSet) "All authenticated carriers belong to the same ${first!!.kNeeded}-of-${first.nTotal} set"
+                else "Carriers have different share IDs or thresholds"
+            )
+            val uniqueIndexes = valid.map { it.header!!.shareIdx }.toSet()
+            checks += VerificationCheck(
+                "Unique share indexes",
+                if (uniqueIndexes.size == valid.size) VerificationStatus.PASS else VerificationStatus.FAIL,
+                "${uniqueIndexes.size} unique share indexes across ${valid.size} authenticated carriers"
+            )
+            checks += VerificationCheck(
+                "Threshold availability",
+                if (valid.size >= first!!.kNeeded) VerificationStatus.PASS else VerificationStatus.WARNING,
+                "${valid.size} verified carriers available; ${first.kNeeded} required"
+            )
+        }
+        return CarrierSetVerificationReport(reports, checks)
+    }
+
+    suspend fun benchmarkCarriers(
+        stegoFiles: List<File>,
+        passphrase: String,
+        verificationTrials: Int = 3
+    ): BenchmarkReport = withContext(Dispatchers.IO) {
+        require(verificationTrials in 1..10) { "Verification trials must be between 1 and 10" }
+        val carriers = stegoFiles.map { file ->
+            val analysis = analyzeImage(file)
+            val attempts = if (passphrase.isBlank()) {
+                emptyList()
+            } else {
+                (1..verificationTrials).map { verifyCarrier(file, passphrase).passed }
+            }
+            val verifiedHeader = if (passphrase.isBlank()) null else verifyCarrier(file, passphrase).header
+            val entropy = (analysis.redLsbEntropy + analysis.greenLsbEntropy + analysis.blueLsbEntropy) / 3f
+            CarrierBenchmark(
+                fileName = file.name,
+                availableCapacityBytes = analysis.estimatedCapacityBytes.toLong(),
+                usedCapacityBytes = verifiedHeader?.let { it.shareDataLen + ZyloCrypto.HEADER_FIXED_LEN },
+                changedChannelRatio = null,
+                meanAbsolutePixelError = null,
+                verificationSuccesses = attempts.count { it },
+                verificationTrials = attempts.size,
+                lsbEntropy = entropy,
+                detectabilityIndicator = (1f - entropy).coerceIn(0f, 1f)
+            )
+        }
+        val totalTrials = carriers.sumOf { it.verificationTrials }
+        val totalSuccesses = carriers.sumOf { it.verificationSuccesses }
+        BenchmarkReport(
+            carriers = carriers,
+            aggregateAvailableCapacityBytes = carriers.sumOf { it.availableCapacityBytes },
+            aggregateUsedCapacityBytes = if (carriers.any { it.usedCapacityBytes != null }) {
+                carriers.mapNotNull { it.usedCapacityBytes }.sum()
+            } else null,
+            aggregateChangedChannelRatio = null,
+            aggregateMeanAbsolutePixelError = null,
+            aggregateVerificationReliability = if (totalTrials == 0) null else totalSuccesses.toFloat() / totalTrials
+        )
     }
 
     /**
@@ -1167,7 +1287,10 @@ object StegoEngine {
             isStatelessLikely = rEntropy > 0.98f && gEntropy > 0.98f && bEntropy > 0.98f,
             redLsbEntropy = rEntropy,
             greenLsbEntropy = gEntropy,
-            blueLsbEntropy = bEntropy
+            blueLsbEntropy = bEntropy,
+            estimatedVisualDistortionPercent = ((rEntropy + gEntropy + bEntropy) / 3f * 0.8f).coerceIn(0f, 100f),
+            estimatedDetectabilityScore = ((rEntropy + gEntropy + bEntropy) / 3f).coerceIn(0f, 1f),
+            extractionReliability = "Not measured without a verified passphrase and carrier set"
         )
     }
 
