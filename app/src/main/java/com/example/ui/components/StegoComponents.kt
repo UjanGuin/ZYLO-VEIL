@@ -2,6 +2,7 @@ package com.example.ui.components
 
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -93,6 +94,91 @@ fun GlassCard(
             modifier = Modifier.padding(18.dp),
             content = content
         )
+    }
+}
+
+@Composable
+fun GlassBottomNavigation(
+    items: List<Triple<String, ImageVector, Boolean>>,
+    onItemSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(76.dp)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .clip(RoundedCornerShape(28.dp))
+            .border(
+                BorderStroke(1.dp, Color.White.copy(alpha = 0.26f)),
+                RoundedCornerShape(28.dp)
+            )
+            .background(
+                Brush.horizontalGradient(
+                    listOf(
+                        Color.White.copy(alpha = 0.12f),
+                        Cyprus.copy(alpha = 0.62f),
+                        Color.White.copy(alpha = 0.10f)
+                    )
+                )
+            )
+    ) {
+        val selectedIndex = items.indexOfFirst { it.third }.coerceAtLeast(0)
+        val itemWidth = maxWidth / items.size
+        val indicatorX by animateDpAsState(
+            targetValue = itemWidth * selectedIndex + 6.dp,
+            animationSpec = tween(420, easing = FastOutSlowInEasing),
+            label = "glassNavIndicator"
+        )
+
+        Box(
+            modifier = Modifier
+                .offset(x = indicatorX)
+                .width(itemWidth - 12.dp)
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(24.dp))
+                .border(
+                    BorderStroke(1.dp, Color.White.copy(alpha = 0.64f)),
+                    RoundedCornerShape(24.dp)
+                )
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            Color.White.copy(alpha = 0.24f),
+                            LimeSprout.copy(alpha = 0.10f),
+                            Color.White.copy(alpha = 0.08f)
+                        )
+                    )
+                )
+        )
+
+        Row(modifier = Modifier.fillMaxSize()) {
+            items.forEachIndexed { index, item ->
+                val selected = item.third
+                Column(
+                    modifier = Modifier
+                        .width(itemWidth)
+                        .fillMaxHeight()
+                        .clickable { onItemSelected(index) },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = item.second,
+                        contentDescription = item.first,
+                        tint = if (selected) LimeSprout else SandSecondary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = item.first,
+                        color = if (selected) Sand else SandSecondary,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                    )
+                }
+            }
+        }
     }
 }
 

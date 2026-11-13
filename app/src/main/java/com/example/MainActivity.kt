@@ -4,8 +4,15 @@ import android.os.Bundle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -28,6 +35,7 @@ import androidx.compose.ui.unit.sp
 import androidx.fragment.app.FragmentActivity
 import com.example.hardware.HardwareAccelerator
 import com.example.ui.screens.*
+import com.example.ui.components.GlassBottomNavigation
 import com.example.ui.theme.*
 import com.example.util.HapticHelper
 
@@ -181,48 +189,19 @@ fun ZyloVeilApp(
             )
         },
         bottomBar = {
-            NavigationBar(
-                containerColor = ObsidianSurface,
-                tonalElevation = 0.dp,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-                    .border(1.dp, GlassBorder, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-            ) {
-                ZyloScreen.values().forEach { screen ->
-                    val isSelected = currentScreen == screen
-                    NavigationBarItem(
-                        selected = isSelected,
-                        onClick = {
-                            if (currentScreen != screen) {
-                                HapticHelper.click(context)
-                                currentScreen = screen
-                            }
-                        },
-                        icon = {
-                            Icon(
-                                imageVector = screen.icon,
-                                contentDescription = screen.title,
-                                tint = if (isSelected) LimeSprout else SandSecondary
-                            )
-                        },
-                        label = {
-                            Text(
-                                text = screen.title,
-                                color = if (isSelected) LimeSprout else SandSecondary,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                            )
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = LimeSprout,
-                            selectedTextColor = LimeSprout,
-                            indicatorColor = Cyprus,
-                            unselectedIconColor = SandSecondary,
-                            unselectedTextColor = SandSecondary
-                        ),
-                        modifier = Modifier.testTag("nav_item_${screen.name.lowercase()}")
-                    )
-                }
-            }
+            GlassBottomNavigation(
+                items = ZyloScreen.values().map {
+                    Triple(if (it == ZyloScreen.ABOUT) "Info" else it.title, it.icon, currentScreen == it)
+                },
+                onItemSelected = { index ->
+                    val screen = ZyloScreen.values()[index]
+                    if (currentScreen != screen) {
+                        HapticHelper.click(context)
+                        currentScreen = screen
+                    }
+                },
+                modifier = Modifier.navigationBarsPadding()
+            )
         }
     ) { innerPadding ->
         Box(
@@ -230,11 +209,26 @@ fun ZyloVeilApp(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            when (currentScreen) {
-                ZyloScreen.VEIL -> VeilScreen(onResultGenerated = {})
-                ZyloScreen.UNVEIL -> UnveilScreen()
-                ZyloScreen.INSPECT -> InspectScreen()
-                ZyloScreen.ABOUT -> AboutScreen()
+            AnimatedContent(
+                targetState = currentScreen,
+                transitionSpec = {
+                    val forward = targetState.ordinal > initialState.ordinal
+                    if (forward) {
+                        (slideInHorizontally(tween(420)) { it } + fadeIn(tween(260))) togetherWith
+                                (slideOutHorizontally(tween(360)) { -it / 3 } + fadeOut(tween(180)))
+                    } else {
+                        (slideInHorizontally(tween(420)) { -it } + fadeIn(tween(260))) togetherWith
+                                (slideOutHorizontally(tween(360)) { it / 3 } + fadeOut(tween(180)))
+                    }
+                },
+                label = "screenSlideTransition"
+            ) { screen ->
+                when (screen) {
+                    ZyloScreen.VEIL -> VeilScreen(onResultGenerated = {})
+                    ZyloScreen.UNVEIL -> UnveilScreen()
+                    ZyloScreen.INSPECT -> InspectScreen()
+                    ZyloScreen.ABOUT -> AboutScreen()
+                }
             }
         }
     }
