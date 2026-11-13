@@ -188,21 +188,6 @@ fun ZyloVeilApp(
                 )
             )
         },
-        bottomBar = {
-            GlassBottomNavigation(
-                items = ZyloScreen.values().map {
-                    Triple(if (it == ZyloScreen.ABOUT) "Info" else it.title, it.icon, currentScreen == it)
-                },
-                onItemSelected = { index ->
-                    val screen = ZyloScreen.values()[index]
-                    if (currentScreen != screen) {
-                        HapticHelper.click(context)
-                        currentScreen = screen
-                    }
-                },
-                modifier = Modifier.navigationBarsPadding()
-            )
-        }
     ) { innerPadding ->
         Box(
             modifier = Modifier
@@ -230,6 +215,23 @@ fun ZyloVeilApp(
                     ZyloScreen.ABOUT -> AboutScreen()
                 }
             }
+
+            GlassBottomNavigation(
+                items = ZyloScreen.values().map {
+                    Triple(if (it == ZyloScreen.ABOUT) "Info" else it.title, it.icon, currentScreen == it)
+                },
+                onItemSelected = { index ->
+                    val screen = ZyloScreen.values()[index]
+                    if (currentScreen != screen) {
+                        HapticHelper.click(context)
+                        currentScreen = screen
+                    }
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = 4.dp)
+            )
         }
     }
 }
