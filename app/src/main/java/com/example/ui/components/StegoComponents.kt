@@ -8,7 +8,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
@@ -32,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.window.Dialog
 import com.example.model.CarrierImage
 import com.example.model.StegoProgress
@@ -111,14 +112,23 @@ fun GlassBottomNavigation(
             .fillMaxWidth()
             .height(76.dp)
             .padding(horizontal = 12.dp, vertical = 8.dp)
-            .pointerInput(items) {
-                var dragDistance = 0f
-                detectHorizontalDragGestures(
-                    onDragStart = { dragDistance = 0f },
-                    onHorizontalDrag = { change, amount ->
-                        dragDistance += amount
-                    },
-                    onDragEnd = {
+            .pointerInput(selectedIndex, items.size) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val down = awaitFirstDown(
+                            requireUnconsumed = false,
+                            pass = PointerEventPass.Initial
+                        )
+                        var lastX = down.position.x
+                        var dragDistance = 0f
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            val delta = change.position.x - lastX
+                            lastX = change.position.x
+                            dragDistance += delta
+                            if (!change.pressed) break
+                        }
                         if (kotlin.math.abs(dragDistance) > 48f) {
                             val nextIndex = if (dragDistance < 0f) {
                                 (selectedIndex + 1).coerceAtMost(items.lastIndex)
@@ -128,7 +138,7 @@ fun GlassBottomNavigation(
                             if (nextIndex != selectedIndex) onItemSelected(nextIndex)
                         }
                     }
-                )
+                }
             }
             .clip(RoundedCornerShape(28.dp))
             .border(

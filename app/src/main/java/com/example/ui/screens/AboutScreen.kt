@@ -34,6 +34,7 @@ fun AboutScreen() {
             .fillMaxSize()
             .background(ObsidianBlack)
             .padding(horizontal = 20.dp, vertical = 12.dp),
+        contentPadding = PaddingValues(bottom = 104.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // App Summary Card
