@@ -1,8 +1,10 @@
 package com.example.ui.components
 
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -19,7 +21,12 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -107,91 +114,163 @@ fun GlassBottomNavigation(
     modifier: Modifier = Modifier
 ) {
     val selectedIndex = items.indexOfFirst { it.third }.coerceAtLeast(0)
+    val currentSelectedIndex by rememberUpdatedState(selectedIndex)
+    val currentOnItemSelected by rememberUpdatedState(onItemSelected)
+    val coroutineScope = rememberCoroutineScope()
+    var isSwiping by remember { mutableStateOf(false) }
+    val animOffsetPx = remember { androidx.compose.animation.core.Animatable(0f) }
+
+    val pillScale by animateFloatAsState(
+        targetValue = if (isSwiping) 1.55f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "pillScaleBounce"
+    )
+
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .height(76.dp)
-            .padding(horizontal = 12.dp, vertical = 8.dp)
-            .pointerInput(selectedIndex, items.size) {
+            .height(84.dp)
+            .padding(horizontal = 12.dp)
+            .pointerInput(items.size) {
+                val itemWidthPx = size.width.toFloat() / items.size
                 awaitPointerEventScope {
                     while (true) {
-                        val down = awaitFirstDown(
-                            requireUnconsumed = false,
-                            pass = PointerEventPass.Initial
-                        )
+                        val down = awaitFirstDown(requireUnconsumed = false)
                         var lastX = down.position.x
-                        var dragDistance = 0f
+                        var totalDrag = 0f
+                        var isDragging = false
                         while (true) {
-                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            val event = awaitPointerEvent()
                             val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!change.pressed) {
+                                if (isDragging) {
+                                    val startTabCenter = (currentSelectedIndex + 0.5f) * itemWidthPx
+                                    val finalPos = (startTabCenter + totalDrag).coerceIn(0f, size.width.toFloat())
+                                    val targetIndex = (finalPos / itemWidthPx).toInt().coerceIn(0, items.size - 1)
+                                    val currentX = currentSelectedIndex * itemWidthPx + totalDrag
+                                    val targetX = targetIndex * itemWidthPx
+                                    val snapDelta = currentX - targetX
+                                    coroutineScope.launch {
+                                        animOffsetPx.snapTo(snapDelta)
+                                        currentOnItemSelected(targetIndex)
+                                        animOffsetPx.animateTo(
+                                            targetValue = 0f,
+                                            animationSpec = spring(
+                                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                stiffness = Spring.StiffnessMedium
+                                            )
+                                        )
+                                    }
+                                } else {
+                                    val tappedIndex = (change.position.x / itemWidthPx)
+                                        .toInt()
+                                        .coerceIn(0, items.size - 1)
+                                    if (tappedIndex != currentSelectedIndex) {
+                                        val oldTabX = currentSelectedIndex * itemWidthPx
+                                        val newTabX = tappedIndex * itemWidthPx
+                                        val jumpDelta = oldTabX - newTabX
+                                        coroutineScope.launch {
+                                            animOffsetPx.snapTo(jumpDelta)
+                                            currentOnItemSelected(tappedIndex)
+                                            animOffsetPx.animateTo(
+                                                targetValue = 0f,
+                                                animationSpec = spring(
+                                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                    stiffness = Spring.StiffnessMedium
+                                                )
+                                            )
+                                        }
+                                    }
+                                }
+                                isSwiping = false
+                                break
+                            }
                             val delta = change.position.x - lastX
                             lastX = change.position.x
-                            dragDistance += delta
-                            if (!change.pressed) break
-                        }
-                        if (kotlin.math.abs(dragDistance) > 48f) {
-                            val nextIndex = if (dragDistance < 0f) {
-                                (selectedIndex + 1).coerceAtMost(items.lastIndex)
-                            } else {
-                                (selectedIndex - 1).coerceAtLeast(0)
+                            totalDrag += delta
+
+                            if (!isDragging && kotlin.math.abs(totalDrag) > 15f) {
+                                isDragging = true
+                                isSwiping = true
                             }
-                            if (nextIndex != selectedIndex) onItemSelected(nextIndex)
+                            if (isDragging) {
+                                coroutineScope.launch {
+                                    animOffsetPx.snapTo(totalDrag)
+                                }
+                            }
+                            change.consume()
                         }
                     }
                 }
             }
-            .clip(RoundedCornerShape(28.dp))
-            .border(
-                BorderStroke(1.dp, Color.White.copy(alpha = 0.26f)),
-                RoundedCornerShape(28.dp)
-            )
-            .background(
-                Brush.horizontalGradient(
-                    listOf(
-                        Color.White.copy(alpha = 0.12f),
-                        Cyprus.copy(alpha = 0.62f),
-                        Color.White.copy(alpha = 0.10f)
-                    )
-                )
-            )
     ) {
+        val density = androidx.compose.ui.platform.LocalDensity.current
         val itemWidth = maxWidth / items.size
-        val indicatorX by animateDpAsState(
-            targetValue = itemWidth * selectedIndex + 6.dp,
-            animationSpec = tween(420, easing = FastOutSlowInEasing),
-            label = "glassNavIndicator"
-        )
+        val dynamicOffsetDp = with(density) { animOffsetPx.value.toDp() }
+        val indicatorX = itemWidth * selectedIndex + 6.dp + dynamicOffsetDp
 
+        // Frosted capsule track background
         Box(
             modifier = Modifier
-                .offset(x = indicatorX)
-                .width(itemWidth - 12.dp)
-                .fillMaxHeight()
-                .clip(RoundedCornerShape(24.dp))
+                .fillMaxWidth()
+                .height(60.dp)
+                .align(Alignment.Center)
+                .clip(RoundedCornerShape(28.dp))
                 .border(
-                    BorderStroke(1.dp, Color.White.copy(alpha = 0.64f)),
-                    RoundedCornerShape(24.dp)
+                    BorderStroke(1.dp, Color.White.copy(alpha = 0.32f)),
+                    RoundedCornerShape(28.dp)
                 )
                 .background(
                     Brush.verticalGradient(
                         listOf(
-                            Color.White.copy(alpha = 0.24f),
-                            LimeSprout.copy(alpha = 0.10f),
-                            Color.White.copy(alpha = 0.08f)
+                            Color.White.copy(alpha = 0.18f),
+                            Cyprus.copy(alpha = 0.78f),
+                            ObsidianBlack.copy(alpha = 0.65f)
                         )
                     )
                 )
         )
 
-        Row(modifier = Modifier.fillMaxSize()) {
-            items.forEachIndexed { index, item ->
+        // Glass pill indicator (overflows height when scaled during bounce)
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .offset { androidx.compose.ui.unit.IntOffset(indicatorX.roundToPx(), 0) }
+                .width(itemWidth - 12.dp)
+                .height(48.dp)
+                .scale(pillScale)
+                .clip(RoundedCornerShape(24.dp))
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            Color.White.copy(alpha = 0.38f),
+                            Color.White.copy(alpha = 0.18f),
+                            LimeSprout.copy(alpha = 0.14f)
+                        )
+                    )
+                )
+                .border(
+                    BorderStroke(1.dp, Color.White.copy(alpha = 0.45f)),
+                    RoundedCornerShape(24.dp)
+                )
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(60.dp)
+                .align(Alignment.Center)
+        ) {
+            items.forEachIndexed { _, item ->
                 val selected = item.third
                 Column(
                     modifier = Modifier
                         .width(itemWidth)
                         .fillMaxHeight()
-                        .testTag("nav_item_${item.first.lowercase()}")
-                        .clickable { onItemSelected(index) },
+                        .testTag("nav_item_${item.first.lowercase()}"),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
