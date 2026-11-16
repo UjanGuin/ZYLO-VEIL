@@ -1,10 +1,16 @@
 package com.example.ui.screens
 
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
+import android.media.MediaScannerConnection
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.provider.OpenableColumns
+import android.webkit.MimeTypeMap
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -35,84 +41,38 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
-import com.example.crypto.StegoEngine
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.model.ExtractResult
-import com.example.model.StegoProgress
 import com.example.ui.components.*
 import com.example.ui.theme.*
 import com.example.util.HapticHelper
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun UnveilScreen() {
+fun UnveilScreen(
+    viewModel: UnveilViewModel = viewModel()
+) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
-    val coroutineScope = rememberCoroutineScope()
-
-    val stegoFileList = remember { mutableStateListOf<File>() }
-    var passphrase by remember { mutableStateOf("") }
-    var passphraseVisible by remember { mutableStateOf(false) }
-    var allowMutation by remember { mutableStateOf(false) }
-
-    var progress by remember { mutableStateOf(StegoProgress()) }
-    var extractionResult by remember { mutableStateOf<ExtractResult?>(null) }
-    var extractedTextPreview by remember { mutableStateOf<String?>(null) }
-    var isStegoLoading by remember { mutableStateOf(false) }
-    var stegoLoadingStatus by remember { mutableStateOf("") }
 
     val stegoPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents()
     ) { uris: List<Uri> ->
         if (uris.isNotEmpty()) {
-            coroutineScope.launch {
-                isStegoLoading = true
-                stegoLoadingStatus = "Loading ${uris.size} stego carrier(s)..."
-                try {
-                    for ((index, uri) in uris.withIndex()) {
-                        stegoLoadingStatus = "Importing stego carrier ${index + 1} of ${uris.size}..."
-                        try {
-                            val cr = context.contentResolver
-                            var name = "stego_${System.currentTimeMillis()}.png"
-                            cr.query(uri, null, null, null, null)?.use { cursor ->
-                                if (cursor.moveToFirst()) {
-                                    val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                                    if (idx != -1) name = cursor.getString(idx)
-                                }
-                            }
-                            val tempFile = File(context.cacheDir, "extract_${name}")
-                            cr.openInputStream(uri)?.use { input ->
-                                FileOutputStream(tempFile).use { output ->
-                                    input.copyTo(output)
-                                }
-                            }
-                            stegoFileList.add(tempFile)
-                            HapticHelper.click(context)
-                        } catch (e: Exception) {
-                            if (e is CancellationException) throw e
-                            val msg = e.localizedMessage ?: e.message ?: e.javaClass.simpleName
-                            Toast.makeText(context, "Error importing carrier: $msg", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                } finally {
-                    isStegoLoading = false
-                    stegoLoadingStatus = ""
-                }
-            }
+            viewModel.loadStegoFiles(context, uris)
         }
     }
 
-    StegoProgressDialog(progress = progress)
+    StegoProgressDialog(progress = viewModel.progress)
 
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .background(ObsidianBlack)
             .padding(horizontal = 20.dp, vertical = 12.dp),
-        contentPadding = PaddingValues(bottom = 104.dp),
+        contentPadding = PaddingValues(bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // Minimalist Header
@@ -165,7 +125,7 @@ fun UnveilScreen() {
             GlassCard {
                 SectionHeader(
                     title = "Stego Carriers",
-                    subtitle = "${stegoFileList.size} carrier image(s) loaded",
+                    subtitle = "${viewModel.stegoFileList.size} carrier image(s) loaded",
                     icon = Icons.Default.CloudUpload,
                     iconTint = LimeSprout
                 )
@@ -184,11 +144,11 @@ fun UnveilScreen() {
                         testTag = "select_stego_carriers_button"
                     )
 
-                    if (stegoFileList.isNotEmpty()) {
+                    if (viewModel.stegoFileList.isNotEmpty()) {
                         OutlinedButton(
                             onClick = {
                                 HapticHelper.click(context)
-                                stegoFileList.clear()
+                                viewModel.clearStegoFiles()
                             },
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = AlertRed),
                             shape = RoundedCornerShape(14.dp),
@@ -200,7 +160,7 @@ fun UnveilScreen() {
                     }
                 }
 
-                if (isStegoLoading) {
+                if (viewModel.isStegoLoading) {
                     Spacer(modifier = Modifier.height(12.dp))
                     Surface(
                         color = ObsidianSurface,
@@ -219,7 +179,7 @@ fun UnveilScreen() {
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = stegoLoadingStatus,
+                                    text = viewModel.stegoLoadingStatus,
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = Sand,
                                     fontWeight = FontWeight.SemiBold
@@ -247,8 +207,8 @@ fun UnveilScreen() {
         }
 
         // Selected stego carriers list
-        if (stegoFileList.isNotEmpty()) {
-            itemsIndexed(stegoFileList) { idx, file ->
+        if (viewModel.stegoFileList.isNotEmpty()) {
+            itemsIndexed(viewModel.stegoFileList) { idx, file ->
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -289,7 +249,7 @@ fun UnveilScreen() {
                         }
                         IconButton(onClick = {
                             HapticHelper.click(context)
-                            stegoFileList.removeAt(idx)
+                            viewModel.removeStegoFile(idx)
                         }) {
                             Icon(Icons.Default.Close, contentDescription = "Remove", tint = SandMuted)
                         }
@@ -309,17 +269,17 @@ fun UnveilScreen() {
                 )
 
                 OutlinedTextField(
-                    value = passphrase,
-                    onValueChange = { passphrase = it },
+                    value = viewModel.passphrase,
+                    onValueChange = { viewModel.passphrase = it },
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("extract_passphrase_input"),
                     label = { Text("Passphrase", color = SandSecondary) },
-                    visualTransformation = if (passphraseVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    visualTransformation = if (viewModel.passphraseVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     trailingIcon = {
-                        IconButton(onClick = { passphraseVisible = !passphraseVisible }) {
+                        IconButton(onClick = { viewModel.passphraseVisible = !viewModel.passphraseVisible }) {
                             Icon(
-                                imageVector = if (passphraseVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                imageVector = if (viewModel.passphraseVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
                                 contentDescription = "Toggle visibility",
                                 tint = SandSecondary
                             )
@@ -335,65 +295,25 @@ fun UnveilScreen() {
                     )
                 )
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
                 FlagToggleItem(
                     title = "Stego Mutation Mode",
                     description = "Rotates seeds upon extraction; invalidates past stego copies.",
                     icon = Icons.Default.Autorenew,
-                    checked = allowMutation,
-                    onCheckedChange = { allowMutation = it }
+                    checked = viewModel.allowMutation,
+                    onCheckedChange = { viewModel.allowMutation = it }
                 )
             }
         }
 
-        // Primary Action: Bold Luxury Button in Lime Sprout
         // Primary Action: Apple-style Solid Glass Button
         item {
             AppleGlassButton(
-                text = "UNVEIL & RECONSTRUCT SECRET",
+                text = if (viewModel.isExtracting) "UNVEILING SECRET..." else "UNVEIL & RECONSTRUCT SECRET",
+                enabled = !viewModel.isExtracting,
                 onClick = {
-                    if (stegoFileList.isEmpty()) {
-                        HapticHelper.error(context)
-                        Toast.makeText(context, "Select at least 1 stego carrier image", Toast.LENGTH_SHORT).show()
-                        return@AppleGlassButton
-                    }
-                    if (passphrase.isEmpty()) {
-                        HapticHelper.error(context)
-                        Toast.makeText(context, "Please enter the passphrase", Toast.LENGTH_SHORT).show()
-                        return@AppleGlassButton
-                    }
-
-                    HapticHelper.heavy(context)
-
-                    coroutineScope.launch {
-                        try {
-                            val result = StegoEngine.extractMaster(
-                                stegoFiles = stegoFileList.toList(),
-                                passphrase = passphrase,
-                                allowMutation = allowMutation,
-                                onProgress = { progress = it }
-                            )
-                            extractionResult = result
-
-                            try {
-                                val text = String(result.data, Charsets.UTF_8)
-                                val isPrintable = text.all { it.isLetterOrDigit() || it.isWhitespace() || "!@#$%^&*()_+-=[]{}|;':\",./<>?`~".contains(it) }
-                                extractedTextPreview = if (isPrintable && text.length < 50_000) text else null
-                            } catch (e: Exception) {
-                                extractedTextPreview = null
-                            }
-
-                            HapticHelper.success(context)
-                            Toast.makeText(context, "Extracted '${result.filename}' successfully!", Toast.LENGTH_LONG).show()
-                        } catch (e: Throwable) {
-                            progress = StegoProgress()
-                            if (e is CancellationException) return@launch
-                            HapticHelper.error(context)
-                            val msg = e.localizedMessage ?: e.message ?: e.javaClass.simpleName
-                            Toast.makeText(context, "Extraction error: $msg", Toast.LENGTH_LONG).show()
-                        }
-                    }
+                    viewModel.startExtraction(context)
                 },
                 icon = Icons.Default.Key,
                 iconTint = LimeSprout,
@@ -402,7 +322,7 @@ fun UnveilScreen() {
         }
 
         // Extracted Result Card
-        extractionResult?.let { res ->
+        viewModel.extractionResult?.let { res ->
             item {
                 GlassCard(
                     borderColor = LimeSprout.copy(alpha = 0.5f)
@@ -420,102 +340,119 @@ fun UnveilScreen() {
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Column(modifier = Modifier.padding(14.dp)) {
+                            Column(modifier = Modifier.padding(12.dp)) {
                                 Text(
-                                    text = "Steganographic Telemetry",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = LimeSprout
+                                    text = "Share Set ID: #${head.shareId} (K=${head.kNeeded}, N=${head.nTotal})",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = LimeSprout,
+                                    fontWeight = FontWeight.Bold
                                 )
-                                Spacer(modifier = Modifier.height(4.dp))
+                                Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = "Shamir Threshold: ${head.kNeeded} of ${head.nTotal} shares • Share ID: #${head.shareId}",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = Sand
-                                )
-                                Text(
-                                    text = "Flags: ${if (head.isCarrierBound) "Carrier-Bound " else ""}${if (head.isNoiseAdaptive) "Noise-Adaptive " else ""}${if (head.isPoisonAntiForensic) "Anti-Forensics " else ""}${if (head.isStateless) "Stateless " else ""}",
+                                    text = "Total Payload: ${res.data.size} bytes recovered.",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = SandSecondary
                                 )
                             }
                         }
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(14.dp))
                     }
 
-                    if (extractedTextPreview != null) {
+                    // Text Content Preview (if text)
+                    viewModel.extractedTextPreview?.let { textContent ->
                         Text(
-                            text = "Decrypted Text:",
-                            style = MaterialTheme.typography.labelMedium,
+                            text = "Extracted Text Preview:",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
                             color = Sand
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
                         Surface(
                             color = ObsidianSurface,
                             shape = RoundedCornerShape(10.dp),
                             border = BorderStroke(1.dp, GlassBorder),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Column(modifier = Modifier.padding(14.dp)) {
-                                Text(
-                                    text = extractedTextPreview ?: "",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = Sand
-                                )
+                            Text(
+                                text = textContent,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Sand,
+                                modifier = Modifier.padding(14.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+                        AppleGlassSecondaryButton(
+                            text = "Copy Secret to Clipboard",
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(textContent))
+                                HapticHelper.click(context)
+                                Toast.makeText(context, "Copied to clipboard!", Toast.LENGTH_SHORT).show()
+                            },
+                            icon = Icons.Default.ContentCopy,
+                            iconTint = LimeSprout,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                    }
+
+                    // Image Preview if image
+                    var previewBitmap by remember(res.filename) {
+                        mutableStateOf(
+                            try {
+                                BitmapFactory.decodeByteArray(res.data, 0, res.data.size)
+                            } catch (e: Exception) {
+                                null
                             }
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
+                        )
                     }
 
-                    val imageBitmap = remember(res.data) {
-                        try {
-                            BitmapFactory.decodeByteArray(res.data, 0, res.data.size)?.asImageBitmap()
-                        } catch (e: Exception) {
-                            null
-                        }
-                    }
-
-                    if (imageBitmap != null) {
+                    previewBitmap?.let { bmp ->
                         Text(
-                            text = "Decrypted Image Preview:",
-                            style = MaterialTheme.typography.labelMedium,
+                            text = "Secret Image Preview:",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
                             color = Sand
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Image(
-                            bitmap = imageBitmap,
-                            contentDescription = "Decrypted Image",
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Box(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(max = 240.dp)
                                 .clip(RoundedCornerShape(10.dp))
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        if (extractedTextPreview != null) {
-                            AppleGlassSecondaryButton(
-                                text = "Copy Text",
-                                onClick = {
-                                    HapticHelper.click(context)
-                                    clipboardManager.setText(AnnotatedString(extractedTextPreview ?: ""))
-                                    Toast.makeText(context, "Copied to clipboard!", Toast.LENGTH_SHORT).show()
-                                },
-                                icon = Icons.Default.ContentCopy,
-                                modifier = Modifier.weight(1f)
+                                .border(1.dp, GlassBorder, RoundedCornerShape(10.dp))
+                                .background(ObsidianSurface),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Image(
+                                bitmap = bmp.asImageBitmap(),
+                                contentDescription = "Secret Preview",
+                                modifier = Modifier.fillMaxSize()
                             )
                         }
+                        Spacer(modifier = Modifier.height(10.dp))
+                    }
 
+                    // Export / Share Actions
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
                         AppleGlassButton(
-                            text = "Export / Save",
+                            text = "Export File",
                             onClick = {
                                 HapticHelper.click(context)
-                                saveAndShareExtracted(context, res.filename, res.data)
+                                exportExtractedFile(context, res)
+                            },
+                            icon = Icons.Default.SaveAlt,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        AppleGlassSecondaryButton(
+                            text = "Share",
+                            onClick = {
+                                HapticHelper.click(context)
+                                shareExtractedFile(context, res)
                             },
                             icon = Icons.Default.Share,
                             iconTint = LimeSprout,
@@ -528,11 +465,69 @@ fun UnveilScreen() {
     }
 }
 
-fun saveAndShareExtracted(context: Context, filename: String, data: ByteArray) {
+fun exportExtractedFile(context: Context, res: ExtractResult) {
     try {
-        val outDir = File(context.filesDir, "extracted_secrets").apply { mkdirs() }
-        val outFile = File(outDir, filename)
-        FileOutputStream(outFile).use { it.write(data) }
+        val mimeType = getMimeType(res.filename)
+        val savedLocation: String = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val resolver = context.contentResolver
+            val contentValues = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, res.filename)
+                put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/ZyloVeil")
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                ?: resolver.insert(MediaStore.Files.getContentUri("external"), contentValues)
+                ?: throw IllegalStateException("Cannot create MediaStore download entry")
+
+            resolver.openOutputStream(uri)?.use { output ->
+                output.write(res.data)
+            }
+
+            contentValues.clear()
+            contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
+            resolver.update(uri, contentValues, null, null)
+            "Downloads/ZyloVeil/${res.filename}"
+        } else {
+            val downloadsDir = File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                "ZyloVeil"
+            )
+            if (!downloadsDir.exists()) downloadsDir.mkdirs()
+            val outFile = File(downloadsDir, res.filename)
+            FileOutputStream(outFile).use { it.write(res.data) }
+            MediaScannerConnection.scanFile(context, arrayOf(outFile.absolutePath), arrayOf(mimeType), null)
+            "Downloads/ZyloVeil/${res.filename}"
+        }
+
+        Toast.makeText(context, "Saved to $savedLocation", Toast.LENGTH_LONG).show()
+    } catch (e: Exception) {
+        try {
+            val fallbackDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
+            val fallbackFile = File(fallbackDir, res.filename)
+            FileOutputStream(fallbackFile).use { it.write(res.data) }
+            Toast.makeText(context, "Saved to ${fallbackFile.name} in App Storage", Toast.LENGTH_LONG).show()
+        } catch (_: Exception) {
+            val msg = e.localizedMessage ?: e.message ?: e.javaClass.simpleName
+            Toast.makeText(context, "Export error: $msg", Toast.LENGTH_LONG).show()
+        }
+    }
+}
+
+private fun getMimeType(filename: String): String {
+    val ext = filename.substringAfterLast('.', "").lowercase()
+    if (ext.isNotEmpty()) {
+        val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)
+        if (!mime.isNullOrEmpty()) return mime
+    }
+    return "application/octet-stream"
+}
+
+fun shareExtractedFile(context: Context, res: ExtractResult) {
+    try {
+        val outDir = context.cacheDir
+        val outFile = File(outDir, res.filename)
+        FileOutputStream(outFile).use { it.write(res.data) }
 
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", outFile)
         val intent = Intent(Intent.ACTION_SEND).apply {
@@ -540,8 +535,9 @@ fun saveAndShareExtracted(context: Context, filename: String, data: ByteArray) {
             putExtra(Intent.EXTRA_STREAM, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        context.startActivity(Intent.createChooser(intent, "Save or Export Extracted Secret"))
+        context.startActivity(Intent.createChooser(intent, "Share Extracted Secret"))
     } catch (e: Exception) {
-        Toast.makeText(context, "Failed to export: ${e.message}", Toast.LENGTH_SHORT).show()
+        val msg = e.localizedMessage ?: e.message ?: e.javaClass.simpleName
+        Toast.makeText(context, "Share error: $msg", Toast.LENGTH_LONG).show()
     }
 }

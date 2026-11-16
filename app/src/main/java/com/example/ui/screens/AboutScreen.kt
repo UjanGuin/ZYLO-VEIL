@@ -34,7 +34,7 @@ fun AboutScreen() {
             .fillMaxSize()
             .background(ObsidianBlack)
             .padding(horizontal = 20.dp, vertical = 12.dp),
-        contentPadding = PaddingValues(bottom = 104.dp),
+        contentPadding = PaddingValues(bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // App Summary Card
@@ -44,7 +44,7 @@ fun AboutScreen() {
                 backgroundColor = ObsidianCard
             ) {
                 SectionHeader(
-                    title = "ZYLO VEIL v3",
+                    title = "ZYLO VEIL v4",
                     subtitle = "Cryptographic Steganography Architecture",
                     icon = Icons.Default.Security,
                     iconTint = LimeSprout

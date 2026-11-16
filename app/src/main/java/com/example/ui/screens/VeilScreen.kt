@@ -17,7 +17,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -32,20 +32,16 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
-import com.example.crypto.StegoEngine
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.hardware.HardwareAccelerator
-import com.example.model.CarrierImage
-import com.example.model.EmbedOptions
 import com.example.model.EmbedResult
-import com.example.model.StegoProgress
 import com.example.ui.components.*
 import com.example.ui.theme.*
 import com.example.util.HapticHelper
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.launch
 import java.io.File
 import kotlin.math.max
 import kotlin.math.sqrt
@@ -53,110 +49,33 @@ import kotlin.math.sqrt
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VeilScreen(
-    onResultGenerated: (EmbedResult) -> Unit
+    onResultGenerated: (EmbedResult) -> Unit,
+    viewModel: VeilViewModel = viewModel()
 ) {
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
-
-    var secretType by remember { mutableStateOf("TEXT") } // "TEXT" or "FILE"
-    var secretText by remember { mutableStateOf("") }
-    var secretFileName by remember { mutableStateOf("") }
-    var secretBytes by remember { mutableStateOf<ByteArray?>(null) }
-
-    val carrierList = remember { mutableStateListOf<CarrierImage>() }
-    var passphrase by remember { mutableStateOf("") }
-    var passphraseVisible by remember { mutableStateOf(false) }
-
-    var options by remember { mutableStateOf(EmbedOptions()) }
-    var showAdvancedFlags by remember { mutableStateOf(false) }
-    var progress by remember { mutableStateOf(StegoProgress()) }
-
-    var latestResult by remember { mutableStateOf<EmbedResult?>(null) }
-    var conversionNotice by remember { mutableStateOf<String?>(null) }
-    var isCarrierLoading by remember { mutableStateOf(false) }
-    var carrierLoadingStatus by remember { mutableStateOf("") }
 
     val secretFilePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.let {
-            coroutineScope.launch {
-                try {
-                    val cr = context.contentResolver
-                    var name = "secret_payload.dat"
-                    cr.query(it, null, null, null, null)?.use { cursor ->
-                        if (cursor.moveToFirst()) {
-                            val idx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                            if (idx != -1) name = cursor.getString(idx)
-                        }
-                    }
-                    val bytes = cr.openInputStream(it)?.use { s -> s.readBytes() }
-                    if (bytes != null) {
-                        HapticHelper.click(context)
-                        secretFileName = name
-                        secretBytes = bytes
-                        secretType = "FILE"
-                        Toast.makeText(context, "Loaded $name (${bytes.size} bytes)", Toast.LENGTH_SHORT).show()
-                    }
-                } catch (e: Exception) {
-                    if (e is CancellationException) throw e
-                    val msg = e.localizedMessage ?: e.message ?: e.javaClass.simpleName
-                    Toast.makeText(context, "Failed to load secret: $msg", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
+        uri?.let { viewModel.loadSecretFile(context, it) }
     }
 
     val carrierPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents()
     ) { uris: List<Uri> ->
         if (uris.isNotEmpty()) {
-            coroutineScope.launch {
-                isCarrierLoading = true
-                carrierLoadingStatus = "Preparing ${uris.size} carrier image(s)..."
-                var convertedCount = 0
-                try {
-                    for ((index, uri) in uris.withIndex()) {
-                        carrierLoadingStatus = "Processing carrier ${index + 1} of ${uris.size}..."
-                        try {
-                            val carrier = StegoEngine.prepareCarrierImage(
-                                context = context,
-                                uri = uri,
-                                forcePngConversion = options.autoConvertJpgToPng
-                            )
-                            carrierList.add(carrier)
-                            if (carrier.isConvertedFromJpg) {
-                                convertedCount++
-                            }
-                        } catch (e: Exception) {
-                            if (e is CancellationException) throw e
-                            val msg = e.localizedMessage ?: e.message ?: e.javaClass.simpleName
-                            Toast.makeText(context, "Error loading carrier: $msg", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                    if (convertedCount > 0) {
-                        conversionNotice = "Auto-converted $convertedCount JPG/WEBP carrier(s) to lossless PNG"
-                    }
-                    HapticHelper.click(context)
-                    if (options.kNeeded > carrierList.size) {
-                        options = options.copy(kNeeded = max(1, carrierList.size))
-                    }
-                } finally {
-                    isCarrierLoading = false
-                    carrierLoadingStatus = ""
-                }
-            }
+            viewModel.loadCarriers(context, uris)
         }
     }
 
-    StegoProgressDialog(progress = progress)
+    StegoProgressDialog(progress = viewModel.progress)
 
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .background(ObsidianBlack)
             .padding(horizontal = 20.dp, vertical = 12.dp),
-        contentPadding = PaddingValues(bottom = 104.dp),
+        contentPadding = PaddingValues(bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // Minimalist Hero Header
@@ -188,12 +107,12 @@ fun VeilScreen(
 
                     // Refined badge
                     Surface(
-                        color = Cyprus.copy(alpha = 0.35f),
+                        color = CyprusDark,
                         shape = RoundedCornerShape(8.dp),
                         border = BorderStroke(1.dp, LimeSprout.copy(alpha = 0.35f))
                     ) {
                         Text(
-                            text = "K-OF-N VAULT",
+                            text = "GF(256) K-of-N",
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                             style = MaterialTheme.typography.labelSmall,
                             color = LimeSprout,
@@ -206,7 +125,7 @@ fun VeilScreen(
         }
 
         // Clean Auto-converted notification banner (if active)
-        if (conversionNotice != null) {
+        if (viewModel.conversionNotice != null) {
             item {
                 Surface(
                     color = Cyprus.copy(alpha = 0.3f),
@@ -226,13 +145,13 @@ fun VeilScreen(
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
-                            text = conversionNotice ?: "",
+                            text = viewModel.conversionNotice ?: "",
                             style = MaterialTheme.typography.bodyMedium,
                             color = Sand,
                             modifier = Modifier.weight(1f)
                         )
                         IconButton(
-                            onClick = { conversionNotice = null },
+                            onClick = { viewModel.conversionNotice = null },
                             modifier = Modifier.size(28.dp)
                         ) {
                             Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = SandSecondary, modifier = Modifier.size(16.dp))
@@ -264,10 +183,10 @@ fun VeilScreen(
                             modifier = Modifier
                                 .weight(1f)
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(if (secretType == "TEXT") Cyprus else Color.Transparent)
+                                .background(if (viewModel.secretType == "TEXT") Cyprus else Color.Transparent)
                                 .clickable {
                                     HapticHelper.click(context)
-                                    secretType = "TEXT"
+                                    viewModel.secretType = "TEXT"
                                 }
                                 .padding(vertical = 10.dp),
                             contentAlignment = Alignment.Center
@@ -275,8 +194,8 @@ fun VeilScreen(
                             Text(
                                 text = "Confidential Text",
                                 style = MaterialTheme.typography.labelMedium,
-                                color = if (secretType == "TEXT") Sand else SandSecondary,
-                                fontWeight = if (secretType == "TEXT") FontWeight.Bold else FontWeight.Normal
+                                color = if (viewModel.secretType == "TEXT") Sand else SandSecondary,
+                                fontWeight = if (viewModel.secretType == "TEXT") FontWeight.Bold else FontWeight.Normal
                             )
                         }
 
@@ -284,10 +203,10 @@ fun VeilScreen(
                             modifier = Modifier
                                 .weight(1f)
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(if (secretType == "FILE") Cyprus else Color.Transparent)
+                                .background(if (viewModel.secretType == "FILE") Cyprus else Color.Transparent)
                                 .clickable {
                                     HapticHelper.click(context)
-                                    secretType = "FILE"
+                                    viewModel.secretType = "FILE"
                                 }
                                 .padding(vertical = 10.dp),
                             contentAlignment = Alignment.Center
@@ -295,8 +214,8 @@ fun VeilScreen(
                             Text(
                                 text = "Secret Document / File",
                                 style = MaterialTheme.typography.labelMedium,
-                                color = if (secretType == "FILE") Sand else SandSecondary,
-                                fontWeight = if (secretType == "FILE") FontWeight.Bold else FontWeight.Normal
+                                color = if (viewModel.secretType == "FILE") Sand else SandSecondary,
+                                fontWeight = if (viewModel.secretType == "FILE") FontWeight.Bold else FontWeight.Normal
                             )
                         }
                     }
@@ -304,10 +223,10 @@ fun VeilScreen(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                if (secretType == "TEXT") {
+                if (viewModel.secretType == "TEXT") {
                     OutlinedTextField(
-                        value = secretText,
-                        onValueChange = { secretText = it },
+                        value = viewModel.secretText,
+                        onValueChange = { viewModel.secretText = it },
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("secret_text_input"),
@@ -339,13 +258,13 @@ fun VeilScreen(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = if (secretFileName.isNotBlank()) secretFileName else "Tap to choose a secret file",
+                                    text = if (viewModel.secretFileName.isNotBlank()) viewModel.secretFileName else "Tap to choose a secret file",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = if (secretFileName.isNotBlank()) Sand else SandMuted
+                                    color = if (viewModel.secretFileName.isNotBlank()) Sand else SandMuted
                                 )
                                 Text(
-                                    text = if (secretBytes != null) "${secretBytes!!.size / 1024} KB loaded" else "PDF, TXT, DOCX, ZIP, JSON supported",
+                                    text = if (viewModel.secretBytes != null) "${viewModel.secretBytes!!.size / 1024} KB loaded" else "PDF, TXT, DOCX, ZIP, JSON supported",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = SandSecondary
                                 )
@@ -356,7 +275,7 @@ fun VeilScreen(
                 }
 
                 // Payload Telemetry & Capacity Requirement
-                val payloadSize = if (secretType == "TEXT") secretText.toByteArray(Charsets.UTF_8).size else (secretBytes?.size ?: 0)
+                val payloadSize = if (viewModel.secretType == "TEXT") viewModel.secretText.toByteArray(Charsets.UTF_8).size else (viewModel.secretBytes?.size ?: 0)
                 if (payloadSize > 0) {
                     val approxEncryptedSize = payloadSize + 44 + 81 // Overhead + header
                     val minCarrierPixels = ((approxEncryptedSize * 8) / (2 * 3)).coerceAtLeast(10_000)
@@ -390,50 +309,60 @@ fun VeilScreen(
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = Sand
                             )
-                            val nLoaded = carrierList.size
+                            val nLoaded = viewModel.carrierList.size
                             if (nLoaded > 0) {
                                 val shareSize = approxEncryptedSize
-                                val hasUnderCapacity = carrierList.any { it.capacityBytes < shareSize }
+                                val hasUnderCapacity = viewModel.carrierList.any { it.capacityBytes < shareSize }
                                 if (hasUnderCapacity) {
-                                    Text(
-                                        text = "• Caution: One or more selected carriers is smaller than $minCarrierKb KB.",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = AlertRed
-                                    )
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    AppleGlassSecondaryButton(
-                                        text = "Auto-Upscale Undersized Carriers",
-                                        onClick = {
-                                            HapticHelper.heavy(context)
-                                            coroutineScope.launch {
-                                                try {
-                                                    isCarrierLoading = true
-                                                    carrierLoadingStatus = "Rescaling carriers to required size..."
-                                                    for (idx in carrierList.indices) {
-                                                        if (carrierList[idx].capacityBytes < shareSize) {
-                                                            val upscaled = StegoEngine.upscaleCarrierImage(
-                                                                context = context,
-                                                                carrier = carrierList[idx],
-                                                                targetCapacityBytes = (shareSize * 1.15).toInt()
-                                                            )
-                                                            carrierList[idx] = upscaled
-                                                        }
-                                                    }
-                                                    HapticHelper.success(context)
-                                                    Toast.makeText(context, "Carriers upscaled to required dimensions!", Toast.LENGTH_SHORT).show()
-                                                } catch (e: Exception) {
-                                                    Toast.makeText(context, "Upscaling failed: ${e.message}", Toast.LENGTH_SHORT).show()
-                                                } finally {
-                                                    isCarrierLoading = false
-                                                    carrierLoadingStatus = ""
-                                                }
-                                            }
-                                        },
-                                        icon = Icons.Default.AspectRatio,
-                                        iconTint = LimeSprout,
+                                    // Bold, prominent Red Auto-Upscale Container
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Surface(
+                                        color = AlertRed.copy(alpha = 0.14f),
+                                        shape = RoundedCornerShape(12.dp),
+                                        border = BorderStroke(2.dp, AlertRed),
                                         modifier = Modifier.fillMaxWidth()
-                                    )
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(14.dp)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Warning,
+                                                    contentDescription = "Warning",
+                                                    tint = AlertRed,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = "UNDERSIZED CARRIER DETECTED",
+                                                    style = MaterialTheme.typography.labelLarge,
+                                                    fontWeight = FontWeight.ExtraBold,
+                                                    letterSpacing = 0.5.sp,
+                                                    color = AlertRed
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Text(
+                                                text = "One or more selected carriers is smaller than the required ~$minCarrierKb KB. Auto-upscale them now to ensure successful embedding without quality loss.",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = Sand
+                                            )
+                                            Spacer(modifier = Modifier.height(12.dp))
+                                            AppleGlassButton(
+                                                text = "AUTO-UPSCALE UNDERSIZED CARRIERS",
+                                                onClick = {
+                                                    HapticHelper.heavy(context)
+                                                    viewModel.autoUpscaleUndersizedCarriers(context, shareSize)
+                                                },
+                                                icon = Icons.Default.AspectRatio,
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+                                        }
+                                    }
                                 } else {
                                     Text(
                                         text = "• All $nLoaded selected carrier(s) satisfy the minimum capacity requirement.",
@@ -459,7 +388,7 @@ fun VeilScreen(
             GlassCard {
                 SectionHeader(
                     title = "Carrier Substrate",
-                    subtitle = "${carrierList.size} carrier image(s) loaded",
+                    subtitle = "${viewModel.carrierList.size} carrier image(s) loaded",
                     icon = Icons.Default.Collections,
                     iconTint = LimeSprout
                 )
@@ -479,11 +408,11 @@ fun VeilScreen(
                         testTag = "add_carrier_button"
                     )
 
-                    if (carrierList.isNotEmpty()) {
+                    if (viewModel.carrierList.isNotEmpty()) {
                         OutlinedButton(
                             onClick = {
                                 HapticHelper.click(context)
-                                carrierList.clear()
+                                viewModel.clearCarriers()
                             },
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = AlertRed),
                             shape = RoundedCornerShape(14.dp),
@@ -495,7 +424,7 @@ fun VeilScreen(
                     }
                 }
 
-                if (isCarrierLoading) {
+                if (viewModel.isCarrierLoading) {
                     Spacer(modifier = Modifier.height(12.dp))
                     Surface(
                         color = ObsidianSurface,
@@ -514,7 +443,7 @@ fun VeilScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = carrierLoadingStatus,
+                                    text = viewModel.carrierLoadingStatus,
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = Sand,
                                     fontWeight = FontWeight.SemiBold
@@ -546,16 +475,16 @@ fun VeilScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable {
-                            options = options.copy(autoConvertJpgToPng = !options.autoConvertJpgToPng)
+                            viewModel.options = viewModel.options.copy(autoConvertJpgToPng = !viewModel.options.autoConvertJpgToPng)
                             HapticHelper.click(context)
                         }
                         .padding(vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Checkbox(
-                        checked = options.autoConvertJpgToPng,
+                        checked = viewModel.options.autoConvertJpgToPng,
                         onCheckedChange = {
-                            options = options.copy(autoConvertJpgToPng = it)
+                            viewModel.options = viewModel.options.copy(autoConvertJpgToPng = it)
                             HapticHelper.click(context)
                         },
                         colors = CheckboxDefaults.colors(
@@ -580,19 +509,16 @@ fun VeilScreen(
                     }
                 }
 
-                if (carrierList.isNotEmpty()) {
+                if (viewModel.carrierList.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(16.dp))
-                    carrierList.forEachIndexed { index, carrier ->
+                    viewModel.carrierList.forEachIndexed { index, carrier ->
                         CarrierItemCard(
                             carrier = carrier,
                             index = index,
-                            total = carrierList.size,
+                            total = viewModel.carrierList.size,
                             onRemove = {
                                 HapticHelper.click(context)
-                                carrierList.removeAt(index)
-                                if (options.kNeeded > carrierList.size) {
-                                    options = options.copy(kNeeded = max(1, carrierList.size))
-                                }
+                                viewModel.removeCarrier(index)
                             }
                         )
                     }
@@ -611,17 +537,17 @@ fun VeilScreen(
                 )
 
                 OutlinedTextField(
-                    value = passphrase,
-                    onValueChange = { passphrase = it },
+                    value = viewModel.passphrase,
+                    onValueChange = { viewModel.passphrase = it },
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("passphrase_input"),
                     label = { Text("Vault Passphrase (min 8 chars)", color = SandSecondary) },
-                    visualTransformation = if (passphraseVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    visualTransformation = if (viewModel.passphraseVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     trailingIcon = {
-                        IconButton(onClick = { passphraseVisible = !passphraseVisible }) {
+                        IconButton(onClick = { viewModel.passphraseVisible = !viewModel.passphraseVisible }) {
                             Icon(
-                                imageVector = if (passphraseVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                imageVector = if (viewModel.passphraseVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
                                 contentDescription = "Toggle visibility",
                                 tint = SandSecondary
                             )
@@ -639,7 +565,7 @@ fun VeilScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                val nTotal = max(1, carrierList.size)
+                val nTotal = max(1, viewModel.carrierList.size)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -647,16 +573,16 @@ fun VeilScreen(
                 ) {
                     Column {
                         Text(
-                            text = "Required Shares (K): ${options.kNeeded} of $nTotal",
+                            text = "Required Shares (K): ${viewModel.options.kNeeded} of $nTotal",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = Sand
                         )
                         Text(
-                            text = if (options.kNeeded == 1) {
+                            text = if (viewModel.options.kNeeded == 1) {
                                 "Single carrier mode: any share can unlock the secret."
                             } else {
-                                "Any ${options.kNeeded} of $nTotal images must be collected to reconstruct."
+                                "Any ${viewModel.options.kNeeded} of $nTotal images must be collected to reconstruct."
                             },
                             style = MaterialTheme.typography.bodyMedium,
                             color = SandSecondary
@@ -665,9 +591,9 @@ fun VeilScreen(
                 }
 
                 Slider(
-                    value = options.kNeeded.toFloat(),
+                    value = viewModel.options.kNeeded.toFloat(),
                     onValueChange = {
-                        options = options.copy(kNeeded = it.toInt())
+                        viewModel.options = viewModel.options.copy(kNeeded = it.toInt())
                     },
                     valueRange = 1f..nTotal.toFloat(),
                     steps = if (nTotal > 1) nTotal - 2 else 0,
@@ -688,56 +614,56 @@ fun VeilScreen(
                         .fillMaxWidth()
                         .clickable {
                             HapticHelper.click(context)
-                            showAdvancedFlags = !showAdvancedFlags
+                            viewModel.showAdvancedFlags = !viewModel.showAdvancedFlags
                         },
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     SectionHeader(
                         title = "Adversarial Parameters",
-                        subtitle = if (showAdvancedFlags) "Tap to collapse" else "Carrier binding, anti-forensics, zero-header...",
+                        subtitle = if (viewModel.showAdvancedFlags) "Tap to collapse" else "Carrier binding, anti-forensics, zero-header...",
                         icon = Icons.Default.Tune,
                         iconTint = LimeSprout
                     )
                     Icon(
-                        imageVector = if (showAdvancedFlags) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        imageVector = if (viewModel.showAdvancedFlags) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                         contentDescription = null,
                         tint = SandSecondary
                     )
                 }
 
-                AnimatedVisibility(visible = showAdvancedFlags) {
+                AnimatedVisibility(visible = viewModel.showAdvancedFlags) {
                     Column(modifier = Modifier.padding(top = 10.dp)) {
                         FlagToggleItem(
                             title = "Carrier Bound",
                             description = "Binds payload key to image sensor MSB fingerprint.",
                             icon = Icons.Default.Fingerprint,
-                            checked = options.carrierBound,
-                            onCheckedChange = { options = options.copy(carrierBound = it) }
+                            checked = viewModel.options.carrierBound,
+                            onCheckedChange = { viewModel.options = viewModel.options.copy(carrierBound = it) }
                         )
 
                         FlagToggleItem(
                             title = "Noise Adaptive",
                             description = "Embeds more bits in high-frequency edge textures.",
                             icon = Icons.Default.Grain,
-                            checked = options.noiseAdaptive,
-                            onCheckedChange = { options = options.copy(noiseAdaptive = it) }
+                            checked = viewModel.options.noiseAdaptive,
+                            onCheckedChange = { viewModel.options = viewModel.options.copy(noiseAdaptive = it) }
                         )
 
                         FlagToggleItem(
                             title = "Semantic Camouflage",
                             description = "Blends payload bits with luminance contrast boundaries.",
                             icon = Icons.Default.Psychology,
-                            checked = options.semanticCamo,
-                            onCheckedChange = { options = options.copy(semanticCamo = it) }
+                            checked = viewModel.options.semanticCamo,
+                            onCheckedChange = { viewModel.options = viewModel.options.copy(semanticCamo = it) }
                         )
 
                         FlagToggleItem(
                             title = "Anti-Forensic Poisoning",
                             description = "Injects camera-sensor noise profile to defeat steganalysis scanners.",
                             icon = Icons.Default.Shield,
-                            checked = options.antiForensicPoison,
-                            onCheckedChange = { options = options.copy(antiForensicPoison = it) },
+                            checked = viewModel.options.antiForensicPoison,
+                            onCheckedChange = { viewModel.options = viewModel.options.copy(antiForensicPoison = it) },
                             activeColor = LimeSprout
                         )
 
@@ -745,20 +671,20 @@ fun VeilScreen(
                             title = "Stateless Zero-Header Mode",
                             description = "Removes magic bytes; uses implicit keyed marker.",
                             icon = Icons.Default.VisibilityOff,
-                            checked = options.statelessMode,
-                            onCheckedChange = { options = options.copy(statelessMode = it) }
+                            checked = viewModel.options.statelessMode,
+                            onCheckedChange = { viewModel.options = viewModel.options.copy(statelessMode = it) }
                         )
 
                         FlagToggleItem(
                             title = "Real Self-Destruct",
                             description = "Irreversibly poisons embedded bits after max failed decryption attempts.",
                             icon = Icons.Default.Warning,
-                            checked = options.selfDestruct,
-                            onCheckedChange = { options = options.copy(selfDestruct = it) },
+                            checked = viewModel.options.selfDestruct,
+                            onCheckedChange = { viewModel.options = viewModel.options.copy(selfDestruct = it) },
                             isDestructive = true
                         )
 
-                        if (options.selfDestruct) {
+                        if (viewModel.options.selfDestruct) {
                             Spacer(modifier = Modifier.height(12.dp))
                             Surface(
                                 color = ObsidianBlack,
@@ -781,7 +707,7 @@ fun VeilScreen(
                                             color = Sand
                                         )
                                         Text(
-                                            text = "${options.maxAttempts} failed attempt(s)",
+                                            text = "${viewModel.options.maxAttempts} failed attempt(s)",
                                             style = MaterialTheme.typography.labelMedium,
                                             fontWeight = FontWeight.Bold,
                                             color = AlertRed
@@ -789,9 +715,9 @@ fun VeilScreen(
                                     }
                                     Spacer(modifier = Modifier.height(6.dp))
                                     Slider(
-                                        value = options.maxAttempts.toFloat(),
+                                        value = viewModel.options.maxAttempts.toFloat(),
                                         onValueChange = {
-                                            options = options.copy(maxAttempts = it.toInt())
+                                            viewModel.options = viewModel.options.copy(maxAttempts = it.toInt())
                                         },
                                         valueRange = 1f..10f,
                                         steps = 8,
@@ -802,7 +728,7 @@ fun VeilScreen(
                                         )
                                     )
                                     Text(
-                                        text = "Warning: The carrier file will be completely corrupted with noise after ${options.maxAttempts} failed decryption passphrases.",
+                                        text = "Warning: The carrier file will be completely corrupted with noise after ${viewModel.options.maxAttempts} failed decryption passphrases.",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = SandSecondary
                                     )
@@ -817,60 +743,10 @@ fun VeilScreen(
         // Primary Action: Apple-style Solid Glass Button
         item {
             AppleGlassButton(
-                text = "VEIL & ENCRYPT SUBSTRATE",
+                text = if (viewModel.isEmbedding) "VEILING SUBSTRATE..." else "VEIL & ENCRYPT SUBSTRATE",
+                enabled = !viewModel.isEmbedding,
                 onClick = {
-                    if (passphrase.length < 8) {
-                        HapticHelper.error(context)
-                        Toast.makeText(context, "Passphrase must be at least 8 characters", Toast.LENGTH_SHORT).show()
-                        return@AppleGlassButton
-                    }
-                    if (carrierList.isEmpty()) {
-                        HapticHelper.error(context)
-                        Toast.makeText(context, "Please select at least 1 carrier image", Toast.LENGTH_SHORT).show()
-                        return@AppleGlassButton
-                    }
-
-                    val finalPayloadBytes = if (secretType == "TEXT") {
-                        if (secretText.isBlank()) {
-                            HapticHelper.error(context)
-                            Toast.makeText(context, "Secret message is empty", Toast.LENGTH_SHORT).show()
-                            return@AppleGlassButton
-                        }
-                        secretText.toByteArray(Charsets.UTF_8)
-                    } else {
-                        if (secretBytes == null || secretBytes!!.isEmpty()) {
-                            HapticHelper.error(context)
-                            Toast.makeText(context, "Please choose a secret file", Toast.LENGTH_SHORT).show()
-                            return@AppleGlassButton
-                        }
-                        secretBytes!!
-                    }
-
-                    val finalName = if (secretType == "TEXT") "secret_message.txt" else secretFileName
-                    HapticHelper.heavy(context)
-
-                    coroutineScope.launch {
-                        try {
-                            val result = StegoEngine.embedMaster(
-                                context = context,
-                                secretBytes = finalPayloadBytes,
-                                secretFileName = finalName,
-                                carrierImages = carrierList.toList(),
-                                options = options.copy(passphrase = passphrase),
-                                onProgress = { progress = it }
-                            )
-                            latestResult = result
-                            onResultGenerated(result)
-                            HapticHelper.success(context)
-                            Toast.makeText(context, "Veiled successfully into ${result.outputFiles.size} carriers!", Toast.LENGTH_LONG).show()
-                        } catch (e: Throwable) {
-                            progress = StegoProgress()
-                            if (e is CancellationException) return@launch
-                            HapticHelper.error(context)
-                            val msg = e.localizedMessage ?: e.message ?: e.javaClass.simpleName
-                            Toast.makeText(context, "Embedding failed: $msg", Toast.LENGTH_LONG).show()
-                        }
-                    }
+                    viewModel.startEmbedding(context, onResultGenerated)
                 },
                 icon = Icons.Default.Lock,
                 iconTint = LimeSprout,
@@ -879,7 +755,7 @@ fun VeilScreen(
         }
 
         // Results Card
-        latestResult?.let { res ->
+        viewModel.latestResult?.let { res ->
             item {
                 GlassCard(
                     borderColor = LimeSprout.copy(alpha = 0.5f)
@@ -926,7 +802,8 @@ fun VeilScreen(
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.SemiBold,
                                         color = Sand,
-                                        maxLines = 1
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
                                         text = "Share #${idx + 1} of ${res.nTotal} • ${file.length() / 1024} KB",

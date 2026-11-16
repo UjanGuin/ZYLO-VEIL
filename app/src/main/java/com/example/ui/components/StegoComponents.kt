@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -33,6 +34,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -121,9 +123,9 @@ fun GlassBottomNavigation(
     val animOffsetPx = remember { androidx.compose.animation.core.Animatable(0f) }
 
     val pillScale by animateFloatAsState(
-        targetValue = if (isSwiping) 1.55f else 1f,
+        targetValue = if (isSwiping) 1.12f else 1f,
         animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
+            dampingRatio = Spring.DampingRatioLowBouncy,
             stiffness = Spring.StiffnessMediumLow
         ),
         label = "pillScaleBounce"
@@ -132,8 +134,8 @@ fun GlassBottomNavigation(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .height(84.dp)
-            .padding(horizontal = 12.dp)
+            .height(76.dp)
+            .padding(horizontal = 16.dp, vertical = 4.dp)
             .pointerInput(items.size) {
                 val itemWidthPx = size.width.toFloat() / items.size
                 awaitPointerEventScope {
@@ -159,8 +161,8 @@ fun GlassBottomNavigation(
                                         animOffsetPx.animateTo(
                                             targetValue = 0f,
                                             animationSpec = spring(
-                                                dampingRatio = Spring.DampingRatioMediumBouncy,
-                                                stiffness = Spring.StiffnessMedium
+                                                dampingRatio = Spring.DampingRatioLowBouncy,
+                                                stiffness = Spring.StiffnessMediumLow
                                             )
                                         )
                                     }
@@ -178,8 +180,8 @@ fun GlassBottomNavigation(
                                             animOffsetPx.animateTo(
                                                 targetValue = 0f,
                                                 animationSpec = spring(
-                                                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                                                    stiffness = Spring.StiffnessMedium
+                                                    dampingRatio = Spring.DampingRatioLowBouncy,
+                                                    stiffness = Spring.StiffnessMediumLow
                                                 )
                                             )
                                         }
@@ -210,62 +212,74 @@ fun GlassBottomNavigation(
         val density = androidx.compose.ui.platform.LocalDensity.current
         val itemWidth = maxWidth / items.size
         val dynamicOffsetDp = with(density) { animOffsetPx.value.toDp() }
-        val indicatorX = itemWidth * selectedIndex + 6.dp + dynamicOffsetDp
+        val indicatorX = itemWidth * selectedIndex + 5.dp + dynamicOffsetDp
 
-        // Frosted capsule track background
+        // Frosted Glass Capsule Outer Container Track
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(60.dp)
+                .height(56.dp)
                 .align(Alignment.Center)
-                .clip(RoundedCornerShape(28.dp))
-                .border(
-                    BorderStroke(1.dp, Color.White.copy(alpha = 0.32f)),
-                    RoundedCornerShape(28.dp)
-                )
+                .clip(CircleShape)
                 .background(
                     Brush.verticalGradient(
                         listOf(
-                            Color.White.copy(alpha = 0.18f),
-                            Cyprus.copy(alpha = 0.78f),
-                            ObsidianBlack.copy(alpha = 0.65f)
+                            ObsidianSurface.copy(alpha = 0.94f),
+                            CyprusDark.copy(alpha = 0.96f)
                         )
                     )
                 )
+                .border(
+                    BorderStroke(
+                        1.dp,
+                        Brush.verticalGradient(
+                            listOf(
+                                LimeSprout.copy(alpha = 0.35f),
+                                Color.White.copy(alpha = 0.15f)
+                            )
+                        )
+                    ),
+                    CircleShape
+                )
         )
 
-        // Glass pill indicator (overflows height when scaled during bounce)
+        // Vibrant Glowing Active Pill Selection Indicator
         Box(
             modifier = Modifier
                 .align(Alignment.CenterStart)
                 .offset { androidx.compose.ui.unit.IntOffset(indicatorX.roundToPx(), 0) }
-                .width(itemWidth - 12.dp)
-                .height(48.dp)
+                .width(itemWidth - 10.dp)
+                .height(46.dp)
                 .scale(pillScale)
-                .clip(RoundedCornerShape(24.dp))
+                .clip(CircleShape)
                 .background(
                     Brush.verticalGradient(
                         listOf(
-                            Color.White.copy(alpha = 0.38f),
-                            Color.White.copy(alpha = 0.18f),
-                            LimeSprout.copy(alpha = 0.14f)
+                            LimeSprout,
+                            Color(0xFF8CD848)
                         )
                     )
                 )
                 .border(
-                    BorderStroke(1.dp, Color.White.copy(alpha = 0.45f)),
-                    RoundedCornerShape(24.dp)
+                    BorderStroke(1.dp, Color.White.copy(alpha = 0.55f)),
+                    CircleShape
                 )
         )
 
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(60.dp)
+                .height(56.dp)
                 .align(Alignment.Center)
         ) {
             items.forEachIndexed { _, item ->
                 val selected = item.third
+                val contentColor by animateColorAsState(
+                    targetValue = if (selected) ObsidianBlack else SandSecondary,
+                    animationSpec = tween(150),
+                    label = "tabContentColor"
+                )
+
                 Column(
                     modifier = Modifier
                         .width(itemWidth)
@@ -277,15 +291,15 @@ fun GlassBottomNavigation(
                     Icon(
                         imageVector = item.second,
                         contentDescription = item.first,
-                        tint = if (selected) LimeSprout else SandSecondary,
-                        modifier = Modifier.size(22.dp)
+                        tint = contentColor,
+                        modifier = Modifier.size(20.dp)
                     )
-                    Spacer(modifier = Modifier.height(2.dp))
+                    Spacer(modifier = Modifier.height(1.dp))
                     Text(
                         text = item.first,
-                        color = if (selected) Sand else SandSecondary,
+                        color = contentColor,
                         style = MaterialTheme.typography.labelSmall,
-                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
                     )
                 }
             }
@@ -643,14 +657,18 @@ fun CarrierItemCard(
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = Sand,
-                        maxLines = 1
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "#${index + 1}/$total",
                         style = MaterialTheme.typography.labelSmall,
                         color = LimeSprout,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false
                     )
                 }
 

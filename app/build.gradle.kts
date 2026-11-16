@@ -11,8 +11,8 @@ android {
         applicationId = "com.aistudio.zyloveil.vstg"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "3.5"
+        versionCode = 4
+        versionName = "4.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

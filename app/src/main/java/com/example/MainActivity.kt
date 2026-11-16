@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.hardware.HardwareAccelerator
 import com.example.ui.screens.*
 import com.example.ui.components.GlassBottomNavigation
@@ -93,7 +94,10 @@ enum class ZyloScreen(val title: String, val icon: ImageVector) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ZyloVeilApp(
-    onLockRequested: () -> Unit
+    onLockRequested: () -> Unit,
+    veilViewModel: VeilViewModel = viewModel(),
+    unveilViewModel: UnveilViewModel = viewModel(),
+    inspectViewModel: InspectViewModel = viewModel()
 ) {
     val context = LocalContext.current
     var currentScreen by remember { mutableStateOf(ZyloScreen.VEIL) }
@@ -132,7 +136,7 @@ fun ZyloVeilApp(
                             border = BorderStroke(1.dp, LimeSprout.copy(alpha = 0.35f))
                         ) {
                             Text(
-                                text = "v3.2",
+                                text = "v4",
                                 modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = LimeSprout,
@@ -209,9 +213,16 @@ fun ZyloVeilApp(
                 label = "screenSlideTransition"
             ) { screen ->
                 when (screen) {
-                    ZyloScreen.VEIL -> VeilScreen(onResultGenerated = {})
-                    ZyloScreen.UNVEIL -> UnveilScreen()
-                    ZyloScreen.INSPECT -> InspectScreen()
+                    ZyloScreen.VEIL -> VeilScreen(
+                        onResultGenerated = {},
+                        viewModel = veilViewModel
+                    )
+                    ZyloScreen.UNVEIL -> UnveilScreen(
+                        viewModel = unveilViewModel
+                    )
+                    ZyloScreen.INSPECT -> InspectScreen(
+                        viewModel = inspectViewModel
+                    )
                     ZyloScreen.ABOUT -> AboutScreen()
                 }
             }
